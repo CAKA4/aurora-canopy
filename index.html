@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Aurora Canopy — Field</title>
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F151A; --panel:#18212A; --panel2:#1F2B35; --line:#2C3A46;
+  --text:#EAF1F4; --muted:#93A2AD; --white:#FFFFFF; --form:#141D24;
+  --brand:#2C7A54; --brand-d:#215E41; --amber:#FFB100; --amber-d:#D89600;
+  --good:#3FA45B; --sat:#7CB342; --pot:#E0B400; --dec:#E8862B; --dead:#D0402B; --gone:#7A868E;
+  --field:#FFDD54; --field-edge:#E6B800;
+  --r:14px; --sheet-max:560px;
+  --sans:'Barlow Semi Condensed',system-ui,-apple-system,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hidden;overscroll-behavior:none}
+#map{position:absolute;inset:0;background:#0b0f13}
+.leaflet-container{background:#0b0f13;font-family:var(--sans)}
+
+/* ---- top instrument bar ---- */
+#top{position:absolute;z-index:1000;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;
+  padding:calc(env(safe-area-inset-top) + 8px) 12px 8px;pointer-events:none}
+#brand{pointer-events:auto;background:rgba(15,21,26,.86);backdrop-filter:blur(8px);border:1px solid var(--line);
+  border-radius:12px;padding:7px 12px;display:flex;align-items:center;gap:9px;min-width:0}
+#brand .mark{width:22px;height:22px;flex:none;border-radius:6px;background:
+  linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center}
+#brand .mark svg{width:14px;height:14px;display:block}
+#brand h1{font-size:15px;font-weight:700;letter-spacing:.02em;margin:0;line-height:1;white-space:nowrap}
+#brand h1 span{color:var(--muted);font-weight:500}
+#readout{pointer-events:auto;margin-left:auto;background:rgba(15,21,26,.86);backdrop-filter:blur(8px);
+  border:1px solid var(--line);border-radius:12px;padding:6px 10px;font-family:var(--mono);font-size:11px;
+  display:flex;gap:12px;color:var(--muted)}
+#readout b{color:var(--text);font-weight:600}
+#readout .warn b{color:var(--amber)}
+@media(max-width:520px){#brand h1 span{display:none}#readout{font-size:10px;gap:9px}}
+
+/* ---- basemap + net toggles ---- */
+#tools{position:absolute;z-index:1000;right:12px;top:calc(env(safe-area-inset-top) + 56px);
+  display:flex;flex-direction:column;gap:8px}
+.tbtn{pointer-events:auto;width:44px;height:44px;border-radius:12px;border:1px solid var(--line);
+  background:rgba(15,21,26,.86);backdrop-filter:blur(8px);color:var(--text);font-family:var(--mono);
+  font-size:10px;font-weight:600;display:grid;place-items:center;cursor:pointer;line-height:1.1;text-align:center}
+.tbtn:active{transform:scale(.94)}
+.tbtn.on{border-color:var(--amber);color:var(--amber)}
+.hlpicks{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px}
+.hlp{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:inherit;font-weight:600;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer}
+.hlp.on{background:var(--amber);border-color:var(--amber);color:#20160a}
+.tbtn small{display:block;font-size:8px;color:var(--muted);font-weight:500}
+
+/* ---- floating actions ---- */
+#fabs{position:absolute;z-index:1000;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 16px);
+  display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+.fab{pointer-events:auto;border:none;border-radius:14px;font-family:var(--sans);font-weight:700;font-size:15px;
+  letter-spacing:.01em;padding:0 18px;height:52px;display:flex;align-items:center;gap:9px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.fab svg{width:20px;height:20px}
+.fab.add{background:var(--brand);color:#fff}
+.fab.add.arming{background:var(--amber);color:#20160a}
+.fab.loc{background:var(--panel);color:var(--text);border:1px solid var(--line);width:52px;padding:0;justify-content:center}
+.fab:active{transform:translateY(1px)}
+
+/* arming banner */
+#arm{position:absolute;z-index:1000;left:50%;transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom) + 80px);background:var(--amber);color:#20160a;
+  font-weight:600;font-size:13px;padding:8px 14px;border-radius:20px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap}
+#arm.show{display:block}
+
+/* ---- bottom sheet ---- */
+#scrim{position:absolute;inset:0;z-index:1500;background:rgba(6,9,12,.5);opacity:0;pointer-events:none;transition:opacity .2s}
+#scrim.show{opacity:1;pointer-events:auto}
+#sheet{position:absolute;z-index:1600;left:0;right:0;bottom:0;margin:0 auto;max-width:var(--sheet-max);
+  background:var(--panel);border-radius:20px 20px 0 0;border:1px solid var(--line);border-bottom:none;
+  transform:translateY(102%);transition:transform .26s cubic-bezier(.4,.9,.3,1);
+  max-height:90vh;display:flex;flex-direction:column;box-shadow:0 -10px 40px rgba(0,0,0,.5)}
+#sheet.up{transform:translateY(0)}
+.sheet-grip{padding:9px 0 3px;display:flex;justify-content:center;flex:none}
+.sheet-grip i{width:38px;height:4px;border-radius:3px;background:var(--line)}
+.sheet-head{flex:none;display:flex;align-items:flex-start;gap:12px;padding:2px 18px 12px;border-bottom:1px solid var(--line)}
+.sheet-head .spine{width:5px;align-self:stretch;border-radius:3px;background:var(--gone);flex:none;min-height:34px}
+.sheet-head .htxt{min-width:0;flex:1}
+.sheet-head .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.sheet-head h2{margin:2px 0 0;font-size:20px;font-weight:700;line-height:1.1;overflow-wrap:anywhere}
+.sheet-head .sub{font-size:13px;color:var(--muted);margin-top:2px}
+.sheet-close{flex:none;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+.sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px calc(env(safe-area-inset-bottom) + 18px)}
+
+/* status chip */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:20px;
+  background:var(--panel2);border:1px solid var(--line)}
+.chip .dot{width:9px;height:9px;border-radius:50%;background:var(--gone)}
+
+/* attribute grid */
+.attrs{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:14px 0 4px}
+.attrs .full{grid-column:1/-1}
+.attr .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.attr .v{font-size:15px;font-weight:500;margin-top:1px;overflow-wrap:anywhere}
+.gid{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all}
+
+/* section label */
+.slabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  margin:20px 0 8px;display:flex;align-items:center;gap:8px}
+.slabel::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* inspection history rows */
+.insp{display:flex;gap:10px;padding:10px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--panel2)}
+.insp .spine{width:4px;border-radius:2px;background:var(--gone);flex:none}
+.insp .body{min-width:0;flex:1}
+.insp .row1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.insp .act{font-weight:700;font-size:14px}
+.insp .date{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none}
+.insp .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+.insp .pill{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:5px;margin-left:6px}
+.insp .pill.queued{background:rgba(255,177,0,.16);color:var(--amber)}
+.insp .pill.synced{background:rgba(63,164,91,.16);color:var(--good)}
+.empty{color:var(--muted);font-size:13.5px;padding:12px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+
+/* form */
+.field{margin-bottom:13px}
+.field.hide{display:none}
+.hide{display:none}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.01em}
+.field label .req{color:var(--amber)}
+.field input,.field select,.field textarea{width:100%;background:var(--field);border:1px solid var(--field-edge);
+  border-radius:11px;color:#0E0E0E;font-family:var(--sans);font-size:16px;font-weight:500;padding:12px 12px;appearance:none}
+.field input::placeholder,.field textarea::placeholder{color:#6b5d15}
+.field textarea{min-height:74px;resize:vertical;line-height:1.4}
+.field select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgba(255,215,64,.5)}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hint{font-size:11.5px;color:var(--muted);margin-top:4px}
+.locked{width:100%;min-height:46px;background:var(--form);border:1px solid var(--line);border-radius:11px;
+  color:var(--text);font-size:15px;font-weight:500;padding:12px 36px 12px 12px;display:flex;align-items:center;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none'><rect x='5' y='11' width='14' height='9' rx='2' stroke='%2393A2AD' stroke-width='2'/><path d='M8 11V8a4 4 0 0 1 8 0v3' stroke='%2393A2AD' stroke-width='2'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center}
+.treenote{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:10px;
+  padding:10px 12px;font-size:12.5px;color:var(--muted);line-height:1.45;margin-bottom:14px}
+.treenote b{color:var(--text);font-weight:600}
+.bar{display:grid;grid-template-columns:110px 1fr 34px;align-items:center;gap:10px;font-size:13px;margin-bottom:8px}
+.bar .lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.bar .track{height:14px;background:var(--panel2);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;border-radius:7px;transition:width .7s cubic-bezier(.3,.9,.3,1)}
+.bar .vv{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+
+/* photo */
+.photo{border:1px dashed var(--line);border-radius:12px;padding:14px;text-align:center;background:var(--form);cursor:pointer}
+.photo input{display:none}
+.photo .ic{width:26px;height:26px;margin:0 auto 6px;color:var(--muted)}
+.photo.has{border-style:solid;border-color:var(--brand);padding:8px}
+.photo img{max-height:130px;border-radius:8px;display:block;margin:0 auto}
+.photo .fn{font-size:12px;color:var(--good);margin-top:6px;font-weight:600}
+
+/* buttons */
+.actions{display:flex;gap:10px;margin-top:18px;position:sticky;bottom:0;background:linear-gradient(to top,var(--panel) 78%,transparent);padding:12px 0 4px}
+.btn{flex:1;border:none;border-radius:12px;font-family:var(--sans);font-weight:700;font-size:15.5px;padding:14px;cursor:pointer}
+.btn.primary{background:var(--amber);color:#20160a}
+.btn.brand{background:var(--brand);color:#fff}
+.btn.danger{background:rgba(208,64,43,.14);color:var(--dead);border:1px solid rgba(208,64,43,.4)}
+.btn.ghost{flex:0 0 auto;background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:14px 18px}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.5}
+
+.twobtn{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.bigact{border:none;border-radius:14px;padding:15px 12px;font-family:var(--sans);font-weight:700;font-size:15px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px}
+.bigact svg{width:22px;height:22px}
+.bigact.log{background:var(--amber);color:#20160a}
+.bigact.edit{background:rgba(208,64,43,.16);color:var(--dead);border:1px solid rgba(208,64,43,.4)}
+/* attachment thumbnails */
+.att{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--form);margin-top:6px}
+.att .grid{display:flex;flex-wrap:wrap;gap:8px}
+.att .thumb{width:80px;height:80px;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}
+.att .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.att .thumb .file{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:9px;padding:4px;text-align:center;word-break:break-all}
+/* custom confirm dialog */
+#confirmWrap{position:absolute;inset:0;z-index:5000;background:rgba(6,9,12,.7);display:none;align-items:center;justify-content:center;padding:24px}
+#confirmWrap.show{display:flex}
+#confirmWrap .box{max-width:340px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;text-align:center}
+#confirmWrap .box h3{margin:0 0 8px;font-size:18px}
+#confirmWrap .box p{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.5}
+#confirmWrap .box .row{display:flex;gap:10px}
+#confirmWrap .box button{flex:1;border:none;border-radius:11px;font-family:var(--sans);font-weight:700;font-size:15px;padding:13px;cursor:pointer}
+#confirmWrap .box .no{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+#confirmWrap .box .yes{background:var(--dead);color:#fff}
+.bigact:active{transform:translateY(1px)}
+
+/* records / export panel */
+.kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.kv .n{font-family:var(--mono);font-weight:600}
+pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;padding:12px;overflow-x:auto;
+  font-family:var(--mono);font-size:11.5px;line-height:1.5;color:#bcd;margin:8px 0}
+.note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:10px;
+  padding:11px 13px;font-size:13px;color:var(--muted);line-height:1.5;margin-top:10px}
+.note b{color:var(--text)}
+
+/* toast */
+#toast{position:absolute;z-index:2000;left:50%;transform:translateX(-50%) translateY(20px);
+  bottom:calc(env(safe-area-inset-bottom) + 20px);background:var(--panel2);border:1px solid var(--line);
+  color:var(--text);padding:11px 16px;border-radius:12px;font-size:13.5px;font-weight:500;opacity:0;
+  transition:all .25s;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:88%;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast .tdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+
+/* leaflet marker */
+.tmark{border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.tmark.sel{box-shadow:0 0 0 3px var(--amber),0 1px 4px rgba(0,0,0,.5)}
+.provisional{filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.leaflet-bar a{background:var(--panel);color:var(--text);border-color:var(--line)}
+.leaflet-bar a:hover{background:var(--panel2)}
+
+
+/* ---- live-backend additions ---- */
+#gate{position:absolute;inset:0;z-index:3000;background:radial-gradient(1000px 500px at 70% -10%,rgba(44,122,84,.18),transparent),var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center}
+#gate .mk{width:56px;height:56px;border-radius:15px;background:linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center}
+#gate .mk svg{width:34px;height:34px}
+#gate h1{font-size:26px;margin:6px 0 0}
+#gate p{color:var(--muted);font-size:14px;max-width:320px;margin:0;line-height:1.5}
+#gate button{margin-top:6px;background:var(--brand);color:#fff;border:none;border-radius:13px;font-family:var(--sans);
+  font-weight:700;font-size:16px;padding:15px 28px;cursor:pointer}
+#gate button:active{transform:translateY(1px)}
+#gate .err{color:var(--dead);font-size:13px;max-width:340px}
+#gate.hidden{display:none}
+#userChip{font-family:var(--mono);font-size:10.5px;font-weight:600;color:#20160a;background:var(--field);padding:3px 8px;border-radius:20px;margin-left:2px;white-space:nowrap;max-width:96px;overflow:hidden;text-overflow:ellipsis}
+#identity{position:absolute;inset:0;z-index:4000;background:radial-gradient(900px 480px at 70% -10%,rgba(44,122,84,.18),transparent),rgba(9,13,17,.97);display:flex;align-items:center;justify-content:center;padding:24px}
+#identity.hidden{display:none}
+#identity .idcard{max-width:360px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
+#identity .idmk{width:54px;height:54px;border-radius:15px;background:linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center}
+#identity .idmk svg{width:30px;height:30px}
+#identity h2{font-size:23px;margin:4px 0 0}
+#identity p{color:var(--muted);font-size:13.5px;margin:0;line-height:1.5;max-width:300px}
+#identity .idquick{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px}
+#identity .idquick button{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:700;font-size:15px;padding:12px 18px;border-radius:12px;cursor:pointer;min-width:64px}
+#identity .idquick button.sel{background:var(--field);color:#20160a;border-color:var(--field-edge)}
+#identity input{width:100%;background:var(--field);border:1px solid var(--field-edge);border-radius:12px;color:#0E0E0E;font-family:var(--sans);font-weight:500;font-size:16px;padding:13px 14px;text-align:center}
+#identity input::placeholder{color:#6b5d15}
+#identity #idStart{width:100%;background:var(--brand);color:#fff;border:none;border-radius:13px;font-family:var(--sans);font-weight:700;font-size:16px;padding:15px;cursor:pointer;margin-top:2px}
+#offline{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 52px);
+  background:var(--amber);color:#20160a;font-weight:600;font-size:12px;padding:5px 12px;border-radius:16px;display:none;
+  box-shadow:0 3px 12px rgba(0,0,0,.3)}
+#offline.show{display:block}
+#boot{position:absolute;inset:0;z-index:2500;background:var(--ink);display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px}
+#boot.hidden{display:none}
+.esri-view .esri-attribution{font-size:9px}
+</style>
+</head>
+<body>
+
+<!-- sign-in gate -->
+<div id="gate" class="hidden">
+  <div class="mk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2C8 6 8 10 12 12C16 10 16 6 12 2Z" fill="#fff"/><path d="M12 12C9 13 7 15 8 18C10 19 12 17 12 15C12 17 14 19 16 18C17 15 15 13 12 12Z" fill="#fff" opacity=".85"/><rect x="11.2" y="15" width="1.6" height="7" rx=".8" fill="#fff"/></svg></div>
+  <h1>Aurora Canopy · Field</h1>
+  <p>Sign in with your ArcGIS account to load the tree inventory and log inspections.</p>
+  <button id="signInBtn">Sign in with ArcGIS</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div id="boot">Connecting to ArcGIS…</div>
+<div id="map"></div>
+<div id="offline">Offline — edits are being saved on this device</div>
+
+<div id="top">
+  <div id="brand" onclick="showIdentity()" title="Change inspector">
+    <div class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2C8 6 8 10 12 12C16 10 16 6 12 2Z" fill="#fff"/><path d="M12 12C9 13 7 15 8 18C10 19 12 17 12 15C12 17 14 19 16 18C17 15 15 13 12 12Z" fill="#fff" opacity=".85"/><rect x="11.2" y="15" width="1.6" height="7" rx="0.8" fill="#fff"/></svg></div>
+    <h1>Aurora Canopy <span>· Field</span></h1>
+    <span id="userChip">—</span>
+  </div>
+  <div id="readout" onclick="openDashboard()" style="cursor:pointer">
+    <span>ADD <b id="rAdded">0</b></span>
+    <span>EDIT <b id="rEdited">0</b></span>
+    <span>LOG <b id="rLogged">0</b></span>
+    <span class="warn">QUEUE <b id="rQueue">0</b></span>
+  </div>
+</div>
+
+<div id="identity" class="hidden">
+  <div class="idcard">
+    <div class="idmk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM5 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+    <h2>Who's logging today?</h2>
+    <p>Your name is stamped on every tree log you record this session.</p>
+    <div class="idquick" id="idQuick"></div>
+    <input id="idName" placeholder="or type your name / initials" autocomplete="off">
+    <button id="idStart" onclick="commitIdentity()">Start logging</button>
+  </div>
+</div>
+
+<div id="confirmWrap">
+  <div class="box">
+    <h3 id="cfTitle">Are you sure?</h3>
+    <p id="cfMsg"></p>
+    <div class="row"><button class="no" onclick="cfNo()">Cancel</button><button class="yes" id="cfYes">Delete</button></div>
+  </div>
+</div>
+
+<div id="tools">
+  <button class="tbtn on" id="btnBase" onclick="cycleBase()">SAT<small id="baseLbl">imagery</small></button>
+  <button class="tbtn" id="btnFlag" onclick="openHighlight()">FLAG<small id="flagLbl">pre-2023</small></button>
+  <button class="tbtn" id="btnDash" onclick="openDashboard()">DASH<small>today</small></button>
+  <button class="tbtn" id="btnRec" onclick="openRecords()">SYNC<small id="syncLbl">idle</small></button>
+</div>
+
+<div id="arm">Tap the map to place the new tree</div>
+
+<div id="fabs">
+  <button class="fab add" id="fabAdd" onclick="toggleAdd()">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <span id="addLbl">Add tree</span>
+  </button>
+  <button class="fab loc" onclick="locate()" title="Use my location">
+    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.4" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<div id="scrim" onclick="closeSheet()"></div>
+<div id="sheet">
+  <div class="sheet-grip" onclick="closeSheet()"><i></i></div>
+  <div class="sheet-head">
+    <div class="spine" id="shSpine"></div>
+    <div class="htxt"><div class="eyebrow" id="shEyebrow">TREE</div><h2 id="shTitle">—</h2><div class="sub" id="shSub"></div></div>
+    <button class="sheet-close" onclick="closeSheet()">✕</button>
+  </div>
+  <div class="sheet-body" id="shBody"></div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://js.arcgis.com/4.30/"></script>
+<script>
+/* ============================================================
+   CONFIG  —  fill these four values after you publish the
+   hosted feature service and register the OAuth app.
+   ============================================================ */
+const CONFIG = {
+  portalUrl:  "https://auroraarboretum.maps.arcgis.com",
+  appId:      "l7DVQSsMbBTIGasu",
+  serviceUrl: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Aurora_Tree_Inventory_Final/FeatureServer",
+  treeLayerId: 0,        // layer index of the tree points (AuroraTrees)
+  inspTableId: 1,        // table index (Aurora_Tree_Inspections)
+  fkField:    "tree_fk2", // inspection field that points at the tree GlobalID
+  // --- overlay layers ---
+  parcelBase: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Parcel/FeatureServer",
+  parcelLayerId: 0, parcelAddressField: "LOCATION",
+  roadsUrl: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Roads/FeatureServer/0",
+  roadsLabelField: "FULL_NAME",
+  gridUrl:  "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Map_grid/FeatureServer/0",
+  gridLabelField: "PageNumber",
+  // --- "older tree" halo: yellow dot behind trees dated before 2023 ---
+  oldTreeWhere: "DATE_NEW < DATE '2023-01-01'",
+  // York Region 2024 orthoimagery (same imagery Field Maps uses)
+  yorkImageryUrl: "https://ww2.yorkmaps.ca/arcgis/rest/services/CacheMaps/YR_Imagery2024/MapServer",
+  // taxonomy lookup table (COMMON -> Species / Family)
+  taxonomyItemId: "72a9256564e54bd7b5915110b9a3cedf",
+  utmWkid: 26917  // NAD83 / UTM zone 17N (Aurora, ON)
+};
+
+/* domain coded-values (labels for dropdowns). Kept local so the form
+   renders instantly; these mirror the layer's domains. */
+const DOMAINS = {"activity_type": {"Inspection": "Inspection", "Pruned": "Pruned", "Cabled": "Cabled", "Removed": "Removed", "Planted": "Planted", "Fertilized": "Fertilized", "Mulched": "Mulched", "Injected": "Injected"}, "Removal_reason": {"Disease": "Disease", "Storm damage": "Storm damage", "Construction": "Construction", "Insect - pest damage": "Insect - pest damage", "Vehicle impact": "Vehicle impact", "Other": "Other"}, "inspector_name": {"KC": "KC", "HS": "HS", "CG": "CG"}, "COMMON": {"Code": "Label", "Accolade Elm": "Accolade Elm", "Alberta Spruce": "Alberta Spruce", "Alder sp.": "Alder sp.", "Alexandrina Magnolia": "Alexandrina Magnolia", "Algonquin Pillar Swiss Stone Pine": "Algonquin Pillar Swiss Stone Pine", "Almond Leaf Willow": "Almond Leaf Willow", "American Basswood": "American Basswood", "American Beech": "American Beech", "American Chestnut Chinese Hybrid": "American Chestnut Chinese Hybrid", "American Elderberry": "American Elderberry", "American Elm": "American Elm", "American Elm 'Princeton'": "American Elm 'Princeton'", "American Hazelnut": "American Hazelnut", "American Hornbeam": "American Hornbeam", "American Linden": "American Linden", "American Plum": "American Plum", "American Sycamore": "American Sycamore", "American Wild Plum": "American Wild Plum", "Americana Willow": "Americana Willow", "Amur Corktree": "Amur Corktree", "Amur Honeysuckle": "Amur Honeysuckle", "Amur Maple": "Amur Maple", "Apple sp.": "Apple sp.", "Aristocrat Ornamental Pear": "Aristocrat Ornamental Pear", "Armstrong Red Maple": "Armstrong Red Maple", "Arnold Sentinel Austrian Pine": "Arnold Sentinel Austrian Pine", "Arroyo Willow": "Arroyo Willow", "Ash sp.": "Ash sp.", "Aurea American Elderberry": "Aurea American Elderberry", "Austrian Pine": "Austrian Pine", "Autumn Blaze Freeman Maple": "Autumn Blaze Freeman Maple", "Autumn Blaze Maple": "Autumn Blaze Maple", "Autumn Blaze Norway Maple": "Autumn Blaze Norway Maple", "Autumn Fantasy Freeman Maple": "Autumn Fantasy Freeman Maple", "Baby\u2019s Breath Spirea": "Baby\u2019s Breath Spirea", "Balkan Maple": "Balkan Maple", "Balsam Fir": "Balsam Fir", "Balsam Poplar": "Balsam Poplar", "Barberry": "Barberry", "Basswood": "Basswood", "Beaked Hazelnut": "Beaked Hazelnut", "Beauty Bush": "Beauty Bush", "Beech sp.": "Beech sp.", "Belgian Red Willow": "Belgian Red Willow", "Bench": "Bench", "Betty Saucer Magnolia": "Betty Saucer Magnolia", "Bigtooth Maple": "Bigtooth Maple", "Bing Cherry": "Bing Cherry", "Birch": "Birch", "Bitternut Hickory": "Bitternut Hickory", "Black Alder": "Black Alder", "Black Ash": "Black Ash", "Black Cedar": "Black Cedar", "Black Cherry": "Black Cherry", "Black Chokecherry": "Black Chokecherry", "Black Gum": "Black Gum", "Black Lace Elderberry": "Black Lace Elderberry", "Black Locust": "Black Locust", "Black Locust Purple Robe": "Black Locust Purple Robe", "Black Maple": "Black Maple", "Black Mulberry": "Black Mulberry", "Black Pussy Willow": "Black Pussy Willow", "Black Spruce": "Black Spruce", "Black Walnut": "Black Walnut", "Blackice Plum": "Blackice Plum", "Blue Ash": "Blue Ash", "Blue Beech": "Blue Beech", "Blue Spruce": "Blue Spruce", "Blue Spruce, var \u201choopsii\u201d": "Blue Spruce, var \u201choopsii\u201d", "Bottlebrush Buckeye": "Bottlebrush Buckeye", "Bowhall Maple": "Bowhall Maple", "Bowhall Red Maple": "Bowhall Red Maple", "Bradford Ornamental Pear": "Bradford Ornamental Pear", "Bradford Pear": "Bradford Pear", "Brandywine Crabapple": "Brandywine Crabapple", "Brandywine Maple": "Brandywine Maple", "Brandywine Red Maple": "Brandywine Red Maple", "Briotti Red Horse Chestnut": "Briotti Red Horse Chestnut", "Buckthorn": "Buckthorn", "Buffalo Berry": "Buffalo Berry", "Bur Oak": "Bur Oak", "Bur Oak - Foundation Tree": "Bur Oak - Foundation Tree", "Bur Oak Stump Carving": "Bur Oak Stump Carving", "Burgundy Crabapple": "Burgundy Crabapple", "Butterfly Magnolia": "Butterfly Magnolia", "Butternut": "Butternut", "Butternut Hickory": "Butternut Hickory", "Canada Plum": "Canada Plum", "Capital Ornamental Pear": "Capital Ornamental Pear", "Cardinal Red Mountain Ash": "Cardinal Red Mountain Ash", "Cardinal Royal Mountain Ash": "Cardinal Royal Mountain Ash", "Carpathian Walnut": "Carpathian Walnut", "Caspian Honey Locust": "Caspian Honey Locust", "Celebration Maple": "Celebration Maple", "Chantecleer Pear": "Chantecleer Pear", "Chanticleer Pear": "Chanticleer Pear", "Cherry Birch": "Cherry Birch", "Cherry Plum": "Cherry Plum", "Cherry sp.": "Cherry sp.", "Chess-apple Whitebeam": "Chess-apple Whitebeam", "Chess-apple, Whitebeam": "Chess-apple, Whitebeam", "Chinese Catalpa": "Chinese Catalpa", "Chinese Elm": "Chinese Elm", "Chinese Mountain Ash": "Chinese Mountain Ash", "Chinese Paper Birch": "Chinese Paper Birch", "Chinese Pear": "Chinese Pear", "Chinese Wingnut": "Chinese Wingnut", "Chinkapin Oak": "Chinkapin Oak", "Chinquapin Oak": "Chinquapin Oak", "Choke Cherry": "Choke Cherry", "Cinquefoil Crabapple": "Cinquefoil Crabapple", "Cockspur Hawthorn": "Cockspur Hawthorn", "Columnar Crabapple": "Columnar Crabapple", "Columnar Dark Leaved Beech": "Columnar Dark Leaved Beech", "Columnar Elm": "Columnar Elm", "Columnar English Oak": "Columnar English Oak", "Columnar Norway Maple": "Columnar Norway Maple", "Columnar Ornamental Pear": "Columnar Ornamental Pear", "Columnar Regal Prince Oak": "Columnar Regal Prince Oak", "Columnar Tulip Tree": "Columnar Tulip Tree", "Columnar White Cedar": "Columnar White Cedar", "Columnar White Oak": "Columnar White Oak", "Common Buttonbush": "Common Buttonbush", "Common Lilac": "Common Lilac", "Common Witch Hazel": "Common Witch Hazel", "Concolor Fir": "Concolor Fir", "Copper Beech": "Copper Beech", "Copper Curls Lilac": "Copper Curls Lilac", "Coral Bark Willow": "Coral Bark Willow", "Corkscrew Mulberry": "Corkscrew Mulberry", "Corkscrew Willow": "Corkscrew Willow", "Cornelian Cherry Dogwood": "Cornelian Cherry Dogwood", "Corylus Santiam": "Corylus Santiam", "Cotoneaster": "Cotoneaster", "Crabapple": "Crabapple", "Crimean Linden": "Crimean Linden", "Crimson Cloud Hawthorn": "Crimson Cloud Hawthorn", "Crimson King Norway Maple": "Crimson King Norway Maple", "Crimson Sunset Maple": "Crimson Sunset Maple", "Cucumber Magnolia": "Cucumber Magnolia", "Cucumber Tree": "Cucumber Tree", "Cully Birch": "Cully Birch", "Cut-leaf Crabapple": "Cut-leaf Crabapple", "Dappled Dawn Lilac": "Dappled Dawn Lilac", "Dappled Willow": "Dappled Willow", "Dark Crabapple": "Dark Crabapple", "Dark Leaved Willow": "Dark Leaved Willow", "Dasyados Willow": "Dasyados Willow", "David's Maple": "David's Maple", "Dawn Redwood": "Dawn Redwood", "Dawyck Beech": "Dawyck Beech", "Dawyck Copper Beech": "Dawyck Copper Beech", "Dawyck Golden Beech": "Dawyck Golden Beech", "Dawyck Purple Beech": "Dawyck Purple Beech", "Dawyck Purple Columnar Beech": "Dawyck Purple Columnar Beech", "Dicks Green Willow": "Dicks Green Willow", "Dieckii Maple": "Dieckii Maple", "Dogwood": "Dogwood", "Dolgo Crabapple": "Dolgo Crabapple", "Dolgo Flowering Crabapple": "Dolgo Flowering Crabapple", "Donald Wyman Crabapple": "Donald Wyman Crabapple", "Douglas Fir": "Douglas Fir", "Drummond Red Maple": "Drummond Red Maple", "Dwarf Apple - Frostbite": "Dwarf Apple - Frostbite", "Dwarf European Pear - Magness": "Dwarf European Pear - Magness", "Dwarf Honeysuckle": "Dwarf Honeysuckle", "Dwarf Mnt Ash": "Dwarf Mnt Ash", "Dwarf Mountain Ash": "Dwarf Mountain Ash", "Dwarf Purple Willow": "Dwarf Purple Willow", "Eastern Cottonwood": "Eastern Cottonwood", "Eastern Hemlock": "Eastern Hemlock", "Eastern Red Cedar": "Eastern Red Cedar", "Eastern Redbud": "Eastern Redbud", "Eastern Wahoo Euonymus": "Eastern Wahoo Euonymus", "Eastern White Cedar": "Eastern White Cedar", "Echtermeyer Weeping Crabapple": "Echtermeyer Weeping Crabapple", "Edwin Hillier Scotts Pine": "Edwin Hillier Scotts Pine", "Elderberry": "Elderberry", "Elizabeth Magnolia": "Elizabeth Magnolia", "Elm sp.": "Elm sp.", "Emerald Queen Norway Maple": "Emerald Queen Norway Maple", "Emerald Sunshine Elm": "Emerald Sunshine Elm", "Emerald White Cedar": "Emerald White Cedar", "Encore Magnolia": "Encore Magnolia", "English Elm": "English Elm", "English Oak": "English Oak", "English Privet": "English Privet", "English Walnut": "English Walnut", "English White Oak": "English White Oak", "Erman Birch": "Erman Birch", "Eskimo Sunset Sycamore Maple": "Eskimo Sunset Sycamore Maple", "Euchlora Linden": "Euchlora Linden", "Euonymous Standard": "Euonymous Standard", "Euonymus": "Euonymus", "Euonymus Hamiltonianus": "Euonymus Hamiltonianus", "Euonymus Sarcoxie": "Euonymus Sarcoxie", "European Beech": "European Beech", "European Bird Cherry": "European Bird Cherry", "European Black Alder": "European Black Alder", "European Buckthorn": "European Buckthorn", "European Juneberry": "European Juneberry", "European Larch": "European Larch", "European Linden": "European Linden", "European Mountain Ash": "European Mountain Ash", "European Nettle Tree": "European Nettle Tree", "European Pear - Rescue": "European Pear - Rescue", "European Plum - Bluebyrd": "European Plum - Bluebyrd", "European Spindle Tree": "European Spindle Tree", "Euyonomous": "Euyonomous", "Fairview Maple": "Fairview Maple", "Fastigiata White Pine": "Fastigiata White Pine", "Fat Albert Blue Spruce": "Fat Albert Blue Spruce", "Fern Leaf Beech": "Fern Leaf Beech", "Field Maple": "Field Maple", "Fir sp.": "Fir sp.", "Flame Amur Maple": "Flame Amur Maple", "Flax Mill Majesty Sugar Maple": "Flax Mill Majesty Sugar Maple", "Flowering Ash": "Flowering Ash", "Flowering Centurian Crabapple": "Flowering Centurian Crabapple", "Forrest\u2019s Mountain Ash": "Forrest\u2019s Mountain Ash", "Forrest's Rowan Mountain Ash": "Forrest's Rowan Mountain Ash", "Frages Catalpa": "Frages Catalpa", "Fraser Fir": "Fraser Fir", "Freeman Maple": "Freeman Maple", "Freeman Red Maple": "Freeman Red Maple", "Freeman's Maple": "Freeman's Maple", "Fringe Tree": "Fringe Tree", "Frontier Elm": "Frontier Elm", "Fruit Tree - Apple Or Cherry": "Fruit Tree - Apple Or Cherry", "Galaxy Magnolia": "Galaxy Magnolia", "Geneva Hazelnut": "Geneva Hazelnut", "Giant Pussy Willow": "Giant Pussy Willow", "Ginkgo 'Maidenhair Tree'": "Ginkgo 'Maidenhair Tree'", "Ginkgo Magyar": "Ginkgo Magyar", "Glenleven Linden": "Glenleven Linden", "Globe Cedar": "Globe Cedar", "Globe Maple": "Globe Maple", "Globe Norway Maple": "Globe Norway Maple", "Golden Weeping Willow": "Golden Weeping Willow", "Golden Western Cedar": "Golden Western Cedar", "Golden Willow": "Golden Willow", "Goldenchain": "Goldenchain", "Goldrush Dawn Redwood": "Goldrush Dawn Redwood", "Gray Birch": "Gray Birch", "Green Ash": "Green Ash", "Green Cutleaf Beech": "Green Cutleaf Beech", "Green Mountain Sugar Maple": "Green Mountain Sugar Maple", "Green Vase Zelkova": "Green Vase Zelkova", "Grimo Select Butternut": "Grimo Select Butternut", "Grow Low Fragrant Sumac": "Grow Low Fragrant Sumac", "Hackberry": "Hackberry", "Hagensis Willow": "Hagensis Willow", "Hamilton's Spindle Tree": "Hamilton's Spindle Tree", "Hardy Rubber Tree": "Hardy Rubber Tree", "Harlequin Maple": "Harlequin Maple", "Harlequin Norway Maple": "Harlequin Norway Maple", "Harvest Gold Crabapple": "Harvest Gold Crabapple", "Hawthorn sp.": "Hawthorn sp.", "Hawthorns": "Hawthorns", "Hazelnut": "Hazelnut", "Hedge Maple": "Hedge Maple", "Hick's Yew": "Hick's Yew", "Hick\u2019s Yew": "Hick\u2019s Yew", "Hill\u2019s Yew": "Hill\u2019s Yew", "Hills Yew": "Hills Yew", "Himalayan Birch": "Himalayan Birch", "Homestead Elm": "Homestead Elm", "Honey Locust": "Honey Locust", "Honey Sweet Pear": "Honey Sweet Pear", "Hoopsi Blue Spruce": "Hoopsi Blue Spruce", "Hoopsii Blue Spruce": "Hoopsii Blue Spruce", "Hopa Crabapple": "Hopa Crabapple", "Hoptree, Water Ash": "Hoptree, Water Ash", "Horse Chestnut": "Horse Chestnut", "Horse Chestnut Ruby Red": "Horse Chestnut Ruby Red", "Hutchinsons Yellow Willow": "Hutchinsons Yellow Willow", "Hybrid Poplar": "Hybrid Poplar", "Hydrangea": "Hydrangea", "Improved Bechtel Crabapple": "Improved Bechtel Crabapple", "Indian Magic Crabapple": "Indian Magic Crabapple", "Indian Summer Crabapple": "Indian Summer Crabapple", "Irette Purple Willow": "Irette Purple Willow", "Ironwood": "Ironwood", "Iroquois Butternut": "Iroquois Butternut", "Issho Japanese Walnut": "Issho Japanese Walnut", "Ivory Pillar Japanese Lilac": "Ivory Pillar Japanese Lilac", "Ivory Silk Japanese Lilac": "Ivory Silk Japanese Lilac", "Jack Pine": "Jack Pine", "Jacquemontii Birch": "Jacquemontii Birch", "Jacquemontii White Birch": "Jacquemontii White Birch", "Japanee Zelkova": "Japanee Zelkova", "Japanese Catalpa": "Japanese Catalpa", "Japanese Cherry": "Japanese Cherry", "Japanese Fantail Willow": "Japanese Fantail Willow", "Japanese Larch": "Japanese Larch", "Japanese Lilac": "Japanese Lilac", "Japanese Maple": "Japanese Maple", "Japanese Mountain Ash": "Japanese Mountain Ash", "Japanese Pagoda Tree": "Japanese Pagoda Tree", "Japanese Tree Lilac": "Japanese Tree Lilac", "Japanese Whitespire Birch": "Japanese Whitespire Birch", "Japanese Zelkova": "Japanese Zelkova", "Juniper": "Juniper", "Karpick Red Maple": "Karpick Red Maple", "Katsura": "Katsura", "Kentucky Coffeeetree": "Kentucky Coffeeetree", "Klems Bechtel Crabapple": "Klems Bechtel Crabapple", "Kobushi Magnolia": "Kobushi Magnolia", "Korean Mountain Ash": "Korean Mountain Ash", "Korean Spruce": "Korean Spruce", "Kwanzan Japanese Cherry": "Kwanzan Japanese Cherry", "Lancelot Crabapple": "Lancelot Crabapple", "Large-leaved Linden": "Large-leaved Linden", "Largetooth Aspen": "Largetooth Aspen", "Laurel Willow": "Laurel Willow", "Lenne Saucer Magnolia": "Lenne Saucer Magnolia", "Leonard Messel Magnolia": "Leonard Messel Magnolia", "Liberty Elm": "Liberty Elm", "Lilac": "Lilac", "Lilac (pink Flowered)": "Lilac (pink Flowered)", "Linden": "Linden", "Littleleaf Linden": "Littleleaf Linden", "Lombardy Poplar": "Lombardy Poplar", "London Plane Tree": "London Plane Tree", "Louisa Crabapple": "Louisa Crabapple", "Madonna Crabapple": "Madonna Crabapple", "Magnolia": "Magnolia", "Makamic Flowering Crabapple": "Makamic Flowering Crabapple", "Makamik Crabapple": "Makamik Crabapple", "Makamik Flowering Crabapple": "Makamik Flowering Crabapple", "Mancherian Cherry": "Mancherian Cherry", "Manchurian Catalpa": "Manchurian Catalpa", "Manchurian Cherry": "Manchurian Cherry", "Manitoba Maple": "Manitoba Maple", "Maple sp.": "Maple sp.", "Mckaky Willow": "Mckaky Willow", "Middledorp White Birch": "Middledorp White Birch", "Ming Cherry": "Ming Cherry", "Minuet Preston Lilac": "Minuet Preston Lilac", "Miyabeana Willow": "Miyabeana Willow", "Moerheim Blue Spruce": "Moerheim Blue Spruce", "Morden Golden Glow Elderberry": "Morden Golden Glow Elderberry", "Mount Baker Lilac": "Mount Baker Lilac", "Mountain Ash": "Mountain Ash", "Mt Fiji Japanese Cherry": "Mt Fiji Japanese Cherry", "Mugo Pine": "Mugo Pine", "Mulberry": "Mulberry", "Multiflora Rose": "Multiflora Rose", "Multiplex Pear": "Multiplex Pear", "Nanking Cherry": "Nanking Cherry", "Nannyberry": "Nannyberry", "Newport Flowering Plum": "Newport Flowering Plum", "Niedz Crabapple": "Niedz Crabapple", "No Tree": "No Tree", "Northern Catalpa": "Northern Catalpa", "Northern Catalpa Globe": "Northern Catalpa Globe", "Northwood Red Maple": "Northwood Red Maple", "Norway Maple": "Norway Maple", "Norway Maple Globe": "Norway Maple Globe", "Norway Maple Superform": "Norway Maple Superform", "Norway Spruce": "Norway Spruce", "Oak Scarlet": "Oak Scarlet", "Oakleaf Mountain Ash": "Oakleaf Mountain Ash", "Ohio Buckeye": "Ohio Buckeye", "Olive Tree Shrub": "Olive Tree Shrub", "Olivers Lime Linden": "Olivers Lime Linden", "Oregon Ash": "Oregon Ash", "Oriental Spruce": "Oriental Spruce", "Ornamental Cherry Plum": "Ornamental Cherry Plum", "Ornamental Pear": "Ornamental Pear", "Osage Orange": "Osage Orange", "Pacific Sunset Maple": "Pacific Sunset Maple", "Panicled Hydrangea": "Panicled Hydrangea", "Paper Birch": "Paper Birch", "Paperbark Maple": "Paperbark Maple", "Pattern Perfect Tatarian Maple": "Pattern Perfect Tatarian Maple", "Paw Paw": "Paw Paw", "Pear": "Pear", "Pin Cherry": "Pin Cherry", "Pin Oak": "Pin Oak", "Pink Spires Crabapple": "Pink Spires Crabapple", "Plum": "Plum", "Plum x Sweet Cherry - Nadia": "Plum x Sweet Cherry - Nadia", "Poplar sp.": "Poplar sp.", "Prairiefire Crabapple": "Prairiefire Crabapple", "Preston Lilac": "Preston Lilac", "Prickly Leaf Willow": "Prickly Leaf Willow", "Princeton Gold Maple": "Princeton Gold Maple", "Profusion Crabapple": "Profusion Crabapple", "Prospector Elm": "Prospector Elm", "Pumpkin Ash": "Pumpkin Ash", "Purple Gem Crabapple": "Purple Gem Crabapple", "Purple Leaf Cherry": "Purple Leaf Cherry", "Purple Leaf Plum": "Purple Leaf Plum", "Purple Mayday Cherry": "Purple Mayday Cherry", "Purple Sand Cherry": "Purple Sand Cherry", "Purple Sandleaf Cherry": "Purple Sandleaf Cherry", "Purple Willow": "Purple Willow", "Purple-leaf Sandcherry": "Purple-leaf Sandcherry", "Purpleblow Maple": "Purpleblow Maple", "Pussy Willow": "Pussy Willow", "Pyramidal English Oak": "Pyramidal English Oak", "Pyramidal Swedish Aspen": "Pyramidal Swedish Aspen", "Pyramidal Tulip Tree": "Pyramidal Tulip Tree", "Pyramidal White Pine": "Pyramidal White Pine", "Radiant Crabapple": "Radiant Crabapple", "Rainbow Crabapple": "Rainbow Crabapple", "Rancho Sargent Cherry": "Rancho Sargent Cherry", "Rare Crabapple": "Rare Crabapple", "Red Barron Crabapple": "Red Barron Crabapple", "Red Bud": "Red Bud", "Red Cascade European Spindle Tree": "Red Cascade European Spindle Tree", "Red Cedar": "Red Cedar", "Red Crack Willow": "Red Crack Willow", "Red Jade Apple": "Red Jade Apple", "Red Jade Crabapple": "Red Jade Crabapple", "Red Jade Weeping Crabapple": "Red Jade Weeping Crabapple", "Red Maple": "Red Maple", "Red Maple Bowhal": "Red Maple Bowhal", "Red Maple Slessinger": "Red Maple Slessinger", "Red Oak": "Red Oak", "Red Obelisk Beech": "Red Obelisk Beech", "Red Obelisk Crabapple": "Red Obelisk Crabapple", "Red Obilisk Crabapple": "Red Obilisk Crabapple", "Red Osier Dogwood": "Red Osier Dogwood", "Red Pine": "Red Pine", "Red Robin Mountain Ash": "Red Robin Mountain Ash", "Red Splendor Crabapple": "Red Splendor Crabapple", "Red Stem Willow": "Red Stem Willow", "Red Sunset Clump Maple": "Red Sunset Clump Maple", "Red Sunset Maple": "Red Sunset Maple", "Red Tamarix": "Red Tamarix", "Redgold Nectarine": "Redgold Nectarine", "Removed": "Removed", "Rhododendron": "Rhododendron", "River Birch": "River Birch", "Robinson Crabapple": "Robinson Crabapple", "Rock Elm": "Rock Elm", "Rocky Mountain Maple": "Rocky Mountain Maple", "Rose Of Sharon": "Rose Of Sharon", "Rough Leaved Dogwood": "Rough Leaved Dogwood", "Rowan Mountain Ash": "Rowan Mountain Ash", "Royal Beauty Weeping Crabapple": "Royal Beauty Weeping Crabapple", "Royal Crabapple": "Royal Crabapple", "Royal Frost Birch": "Royal Frost Birch", "Royal Frost Weeping Birch": "Royal Frost Weeping Birch", "Royal Knights Blue Spruce": "Royal Knights Blue Spruce", "Royal Raindrop Crabapple": "Royal Raindrop Crabapple", "Royal Red Maple": "Royal Red Maple", "Royal Star White Magnolia": "Royal Star White Magnolia", "Royalty Crabapple": "Royalty Crabapple", "Royalty Preston Lilac": "Royalty Preston Lilac", "Rubber Hardy Tree": "Rubber Hardy Tree", "Ruby Red Horse Chestnut": "Ruby Red Horse Chestnut", "Russian Mountain Ash": "Russian Mountain Ash", "Russian Olive": "Russian Olive", "Russian Olive Tree": "Russian Olive Tree", "Sakhalin Corktree": "Sakhalin Corktree", "Sandow Dwarf Apple": "Sandow Dwarf Apple", "Sassafras": "Sassafras", "Scarlet Oak": "Scarlet Oak", "Schubert Cherry": "Schubert Cherry", "Schubert Chokecherry": "Schubert Chokecherry", "Schwedler Norway Maple": "Schwedler Norway Maple", "Scots Pine": "Scots Pine", "Select Willow": "Select Willow", "Sentinel Pine": "Sentinel Pine", "Serbian Spruce": "Serbian Spruce", "Serviceberry": "Serviceberry", "Seven-son Flower": "Seven-son Flower", "Shagbark Hickory": "Shagbark Hickory", "Shiloh Splash Rivers Birch": "Shiloh Splash Rivers Birch", "Shingle Oak": "Shingle Oak", "Showy Mountain Ash": "Showy Mountain Ash", "Shubert Cherry": "Shubert Cherry", "Siberian Columnar Crabapple": "Siberian Columnar Crabapple", "Siberian Crabapple": "Siberian Crabapple", "Siberian Elm": "Siberian Elm", "Siberian Peashrub": "Siberian Peashrub", "Siebold Euonymos": "Siebold Euonymos", "Siebold Viburnum": "Siebold Viburnum", "Siebold\u2019s Crabapple": "Siebold\u2019s Crabapple", "Sieboldianu Euonymus": "Sieboldianu Euonymus", "Silver Basswood": "Silver Basswood", "Silver Birch": "Silver Birch", "Silver Cascade Pear": "Silver Cascade Pear", "Silver Maple": "Silver Maple", "Silver Ornamental Pear": "Silver Ornamental Pear", "Singleseed Hawthorn": "Singleseed Hawthorn", "Sir Lancelot Crabapple": "Sir Lancelot Crabapple", "Skinner American Hazelnut": "Skinner American Hazelnut", "Slender Willow": "Slender Willow", "Slippery Elm": "Slippery Elm", "Slippery Red Elm": "Slippery Red Elm", "Smith Willow": "Smith Willow", "Smoke Tree": "Smoke Tree", "Snowdrift Crabapple": "Snowdrift Crabapple", "Snowdrift Crabapple Clump": "Snowdrift Crabapple Clump", "Snowflake Crabapple": "Snowflake Crabapple", "Snowmound Spirea": "Snowmound Spirea", "Southern Catalpa": "Southern Catalpa", "Spicebush": "Spicebush", "Spindle Tree": "Spindle Tree", "Splitleaf Sumac": "Splitleaf Sumac", "Spring Flowering Serviceberry": "Spring Flowering Serviceberry", "Spring Flurry Serviceberry": "Spring Flurry Serviceberry", "Spring Snow White Crabapple": "Spring Snow White Crabapple", "Spruce sp.": "Spruce sp.", "Sterling Silver Linden": "Sterling Silver Linden", "Streamco Willow": "Streamco Willow", "Striped Maple": "Striped Maple", "Stump": "Stump", "Stump Present": "Stump Present", "Sugar Hackberry": "Sugar Hackberry", "Sugar Hackberry, Sugarberry": "Sugar Hackberry, Sugarberry", "Sugar Maple": "Sugar Maple", "Sugarberry": "Sugarberry", "Sugartyme Crabapple": "Sugartyme Crabapple", "Sumac": "Sumac", "Sumac Leafed Lilac": "Sumac Leafed Lilac", "Sun Valley Red Maple": "Sun Valley Red Maple", "Sunburst Honey Locust": "Sunburst Honey Locust", "Susan Magnolia": "Susan Magnolia", "Swamp Rose": "Swamp Rose", "Swamp White Oak": "Swamp White Oak", "Swamp Willow": "Swamp Willow", "Swedish Columnar Aspen": "Swedish Columnar Aspen", "Sweet Cherry": "Sweet Cherry", "Sweet Cherry - Black Gold": "Sweet Cherry - Black Gold", "Sweet Cherry - Ebony Pearl": "Sweet Cherry - Ebony Pearl", "Sweet Gum": "Sweet Gum", "Sweet Sixteen Apple": "Sweet Sixteen Apple", "Sycamore": "Sycamore", "Sycamore Maple": "Sycamore Maple", "Tamarack": "Tamarack", "Tartarian Maple": "Tartarian Maple", "Tatarian Honeysuckle": "Tatarian Honeysuckle", "Tatarian Maple": "Tatarian Maple", "Thorlow Weeping Willow": "Thorlow Weeping Willow", "Thornless Honey Locust": "Thornless Honey Locust", "Thorny Blue Russian Olive": "Thorny Blue Russian Olive", "Thorny Honey Locust": "Thorny Honey Locust", "Thunderchild Crabapple": "Thunderchild Crabapple", "Tree Of Heaven": "Tree Of Heaven", "Tree Removed": "Tree Removed", "Trembling Aspen": "Trembling Aspen", "Tricolour Beech": "Tricolour Beech", "Tulip Tree": "Tulip Tree", "Turkestan Maple": "Turkestan Maple", "Turkish Filbert": "Turkish Filbert", "Turkish Hazel": "Turkish Hazel", "Twisted Willow": "Twisted Willow", "Umbrella Magnolia": "Umbrella Magnolia", "Unidentified": "Unidentified", "Uzbekistan Prunus": "Uzbekistan Prunus", "Variegated Beech": "Variegated Beech", "Variegated River Birch": "Variegated River Birch", "Variegated Weigela": "Variegated Weigela", "Venus Hybrid Dogwood": "Venus Hybrid Dogwood", "Viburnum sp.": "Viburnum sp.", "Viburum sp.": "Viburum sp.", "Villosa Lilac": "Villosa Lilac", "Wada's Memory Magnolia": "Wada's Memory Magnolia", "Waterlily Magnolia": "Waterlily Magnolia", "Weeping Beech": "Weeping Beech", "Weeping Crabapple": "Weeping Crabapple", "Weeping Elm": "Weeping Elm", "Weeping Golden Willow": "Weeping Golden Willow", "Weeping Larch": "Weeping Larch", "Weeping Mulberry": "Weeping Mulberry", "Weeping Nootka Cypress": "Weeping Nootka Cypress", "Weeping Norway Spruce": "Weeping Norway Spruce", "Weeping Purple Beech": "Weeping Purple Beech", "Weeping Red Jewel Crabapple": "Weeping Red Jewel Crabapple", "Weeping Siberian Crabapple": "Weeping Siberian Crabapple", "Weeping Siberian Peashrub": "Weeping Siberian Peashrub", "Weeping White Mulberry": "Weeping White Mulberry", "Weeping Willow": "Weeping Willow", "Western Red Cedar": "Western Red Cedar", "Westwood Korean Sun Pear": "Westwood Korean Sun Pear", "White Angel Crabapple": "White Angel Crabapple", "White Ash": "White Ash", "White Birch": "White Birch", "White Cedar": "White Cedar", "White Elderberry": "White Elderberry", "White Elm": "White Elm", "White Fir": "White Fir", "White Mulberry": "White Mulberry", "White Oak": "White Oak", "White Pine": "White Pine", "White Poplar": "White Poplar", "White Spruce": "White Spruce", "White Starlike Magnolia": "White Starlike Magnolia", "White Willow": "White Willow", "Wild Plum": "Wild Plum", "Willow Leaf Pear": "Willow Leaf Pear", "Willow Shrub": "Willow Shrub", "Willow sp.": "Willow sp.", "Willow-leafed Pear": "Willow-leafed Pear", "Winged Euonymus": "Winged Euonymus", "Winterberry Euonymus": "Winterberry Euonymus", "Witch-hazel": "Witch-hazel", "Wolf Lilac": "Wolf Lilac", "Wonder White Willow": "Wonder White Willow", "Wonderblue French Blue Hybrid Lilac": "Wonderblue French Blue Hybrid Lilac", "Yellow Birch": "Yellow Birch", "Yellow Bird Magnolia": "Yellow Bird Magnolia", "Yellow Buckeye": "Yellow Buckeye", "Yellow Paint Maple": "Yellow Paint Maple", "Yellow Stem Flame Willow": "Yellow Stem Flame Willow", "Yellowwood": "Yellowwood", "Yew": "Yew", "Yunnan Crabapple": "Yunnan Crabapple", "Zelkova": "Zelkova", "Zig Zag Mulberry": "Zig Zag Mulberry"}, "OVERHEAL": {"Good": "Good", "Satisfactory": "Satisfactory", "Potential trouble": "Potential trouble", "Declining": "Declining", "Dead": "Dead", "Death imminent": "Death imminent", "Removed": "Removed", "Stump": "Stump", "Stump carving": "Stump carving"}, "STRUDEFE": {"No problem": "No problem", "MINOR (<34%)": "MINOR (<34%)", "MAJOR (35-65%)": "MAJOR (35-65%)", "EXTREME (>65%)": "EXTREME (>65%)"}, "WOUNCANK": {"No problem": "No problem", "MINOR (<34%)": "MINOR (<34%)", "MAJOR (35-65%)": "MAJOR (35-65%)", "EXTREME (>65%)": "EXTREME (>65%)"}, "DEADDECAY": {"NO PROBLEM (no visible problem)": "NO PROBLEM (no visible problem)", "MINOR (<5%)": "MINOR (<5%)", "MAJOR (10-30%)": "MAJOR (10-30%)", "EXTREME (>30%)": "EXTREME (>30%)"}, "FAILPOTE": {"Low": "Low", "Medium": "Medium", "High": "High"}, "IMPEDMNT": {"None": "None", "Fence": "Fence", "Hydrant": "Fire Hydrant", "Ohwire": "Overhead wire", "Sign": "Sign", "Buildstruct": "Building-structure", "Stlight": "Street light", "Trstake": "Tree stake", "Mailbox": "Mailbox", "Ugutility": "Underground utilities", "Other": "Other"}, "PESTDISEAS": {"None observed": "None observed", "Aphids": "Aphids", "Bacterial infection": "Bacterial infection", "Black knot": "Black knot", "Bladder gall mites": "Bladder gall mites", "Blight (general)": "Blight (general)", "Borers": "Borers", "Canker (general)": "Canker (general)", "Confirmed EAB": "Confirmed EAB", "Deer browse": "Deer browse", "Deer or rodent debarking": "Deer or rodent debarking", "Diplodia": "Diplodia", "EAB (evidence)": "EAB (evidence)", "Eutypella canker": "Eutypella canker", "Fungal infection": "Fungal infection", "Gall (general)": "Gall (general)", "Ganoderma fungus": "Ganoderma fungus", "Gypsy moth / LDD moth": "Gypsy moth / LDD moth", "Hackberry gall": "Hackberry gall", "Hackberry psyllid (galls)": "Hackberry psyllid (galls)", "Internal decay": "Internal decay", "Leaf feeding (general)": "Leaf feeding (general)", "Mossy top": "Mossy top", "Nectria canker": "Nectria canker", "Plant bug": "Plant bug", "Possible needle blight": "Possible needle blight", "Possible needle cast": "Possible needle cast", "Potential EAB": "Potential EAB", "Rodent damage": "Rodent damage", "Spindle gall": "Spindle gall", "Rust": "Rust", "Tar spot": "Tar spot", "Anthracnose": "Anthracnose", "Other": "Other"}, "RECOTREA": {"No Treatment": "No Treatment", "Pruning - Immediate": "Pruning - Immediate", "Pruning - High Priority": "Pruning - High Priority", "Routine Pruning": "Routine Pruning", "Training Pruning": "Training Pruning", "Removal-Immediate": "Removal-Immediate", "Removal - High Priority": "Removal - High Priority", "Removal - Low Priority": "Removal - Low Priority", "Potential planting site": "Potential planting site", "Remove stump, potential planting site": "Remove stump, potential planting site", "Other": "Other"}, "SITELOCA": {"Boulevard": "Boulevard", "Lawn": "Lawn", "Centre median": "Centre median", "Raised planter": "Raised planter", "Ground level planter": "Ground level planter", "Other": "Other"}, "DBH": {"0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6", "7": "7", "8": "8", "9": "9", "10": "10", "11": "11", "12": "12", "13": "13", "14": "14", "15": "15", "16": "16", "17": "17", "18": "18", "19": "19", "20": "20", "21": "21", "22": "22", "23": "23", "24": "24", "25": "25", "26": "26", "27": "27", "28": "28", "29": "29", "30": "30", "31": "31", "32": "32", "33": "33", "34": "34", "35": "35", "36": "36", "37": "37", "38": "38", "39": "39", "40": "40", "41": "41", "42": "42", "43": "43", "44": "44", "45": "45", "46": "46", "47": "47", "48": "48", "49": "49", "50": "50", "51": "51", "52": "52", "53": "53", "54": "54", "55": "55", "56": "56", "57": "57", "58": "58", "59": "59", "60": "60", "61": "61", "62": "62", "63": "63", "64": "64", "65": "65", "66": "66", "67": "67", "68": "68", "69": "69", "70": "70", "71": "71", "72": "72", "73": "73", "74": "74", "75": "75", "76": "76", "77": "77", "78": "78", "79": "79", "80": "80", "81": "81", "82": "82", "83": "83", "84": "84", "85": "85", "86": "86", "87": "87", "88": "88", "89": "89", "90": "90", "91": "91", "92": "92", "93": "93", "94": "94", "95": "95", "96": "96", "97": "97", "98": "98", "99": "99", "100": "100", "101": "101", "102": "102", "103": "103", "104": "104", "105": "105", "106": "106", "107": "107", "108": "108", "109": "109", "110": "110", "111": "111", "112": "112", "113": "113", "114": "114", "115": "115", "116": "116", "117": "117", "118": "118", "119": "119", "120": "120", "121": "121", "122": "122", "123": "123", "124": "124", "125": "125", "126": "126", "127": "127", "128": "128", "129": "129", "130": "130", "131": "131", "132": "132", "133": "133", "134": "134", "135": "135", "136": "136", "137": "137", "138": "138", "139": "139", "140": "140", "141": "141", "142": "142", "143": "143", "144": "144", "145": "145", "146": "146", "147": "147", "148": "148", "149": "149", "150": "150", "151": "151", "152": "152", "153": "153", "154": "154", "155": "155", "156": "156", "157": "157", "158": "158", "159": "159", "160": "160", "161": "161", "162": "162", "163": "163", "164": "164", "165": "165", "166": "166", "167": "167", "168": "168", "169": "169", "170": "170", "171": "171", "172": "172", "173": "173", "174": "174", "175": "175", "176": "176", "177": "177", "178": "178", "179": "179", "180": "180", "181": "181", "182": "182", "183": "183", "184": "184", "185": "185", "186": "186", "187": "187", "188": "188", "189": "189", "190": "190", "191": "191", "192": "192", "193": "193", "194": "194", "195": "195", "196": "196", "197": "197", "198": "198", "199": "199", "200": "200", "201": "201", "202": "202", "203": "203", "204": "204", "205": "205", "206": "206", "207": "207", "208": "208", "209": "209", "210": "210", "211": "211", "212": "212", "213": "213", "214": "214", "215": "215", "216": "216", "217": "217", "218": "218", "219": "219", "220": "220", "221": "221", "222": "222", "223": "223", "224": "224", "225": "225", "226": "226", "227": "227", "228": "228", "229": "229", "230": "230", "231": "231", "232": "232", "233": "233", "234": "234", "235": "235", "236": "236", "237": "237", "238": "238", "239": "239", "240": "240", "241": "241", "242": "242", "243": "243", "244": "244", "245": "245", "246": "246", "247": "247", "248": "248", "249": "249"}};
+
+const HEALTH_COLOR = {'Good':'#3FA45B','Satisfactory':'#7CB342','Potential trouble':'#E0B400','Declining':'#E8862B','Dead':'#D0402B','Death imminent':'#D0402B','Removed':'#7A868E','Stump':'#7A868E','Stump carving':'#7A868E'};
+const ACT_FIELDS = {
+  'Inspection': ['condition','defects','dbh','recommend'],
+  'Planted':    ['species','dbh','condition','defects'],
+  'Pruned':     ['notes'],
+  'Cabled':     ['notes'],
+  'Mulched':    ['notes'],
+  'Fertilized': ['notes'],
+  'Injected':   ['notes'],
+  'Removed':    ['notes']
+};
+</script>
+<script>
+/* ============================================================
+   ArcGIS integration
+   ============================================================ */
+let view, map, treeLayer, inspLayer, parcelLayer=null, gridLayer=null, basemapToggleIdx=0;
+let taxoLayer=null, esriRequest=null, projection=null, SpatialRef=null, FeatureLayerC=null;
+let highlightLayer=null, highlightWhere="DATE_NEW < DATE '2023-01-01'";
+let derived={};   // auto-computed field values for the tree currently being added/edited
+let currentInspector='', idPick='';
+let addMode=false, provisional=null, selectedGraphic=null;
+let esriId, GraphicC, PointC;
+let dayAdded=0, dayEdited=0, dayLogged=0;
+function bumpDay(kind){
+  if(kind==='add')dayAdded++; else if(kind==='edit')dayEdited++; else if(kind==='log')dayLogged++;
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  s('rAdded',dayAdded); s('rEdited',dayEdited); s('rLogged',dayLogged);
+}
+let BASES=["arcgis-imagery","arcgis-topographic","hybrid"];
+const BASELBL=["York 2024","streets","Esri sat"];
+
+require([
+  "esri/config","esri/identity/OAuthInfo","esri/identity/IdentityManager",
+  "esri/Map","esri/views/MapView","esri/layers/FeatureLayer","esri/Graphic",
+  "esri/geometry/Point","esri/renderers/UniqueValueRenderer","esri/symbols/SimpleMarkerSymbol",
+  "esri/layers/TileLayer","esri/Basemap","esri/request","esri/geometry/projection","esri/geometry/SpatialReference"
+], function(esriConfig,OAuthInfo,IdentityManager,Map,MapView,FeatureLayer,Graphic,Point,UniqueValueRenderer,SimpleMarkerSymbol,TileLayer,Basemap,esriRequestMod,projectionMod,SpatialReference){
+  esriId=IdentityManager; GraphicC=Graphic; PointC=Point; FeatureLayerC=FeatureLayer;
+  esriRequest=esriRequestMod; projection=projectionMod; SpatialRef=SpatialReference;
+  projection.load();
+  taxoLayer=new FeatureLayer({portalItem:{id:CONFIG.taxonomyItemId}});
+  const info=new OAuthInfo({appId:CONFIG.appId, portalUrl:CONFIG.portalUrl, popup:false});
+  esriId.registerOAuthInfos([info]);
+
+  document.getElementById('signInBtn').onclick=()=>{
+    esriId.getCredential(CONFIG.portalUrl+"/sharing").catch(e=>{
+      document.getElementById('gateErr').textContent="Sign-in failed: "+(e && e.message||e);
+    });
+  };
+
+  esriId.checkSignInStatus(CONFIG.portalUrl+"/sharing").then(start).catch(()=>{
+    document.getElementById('boot').classList.add('hidden');
+    document.getElementById('gate').classList.remove('hidden');
+  });
+
+  function start(){
+    document.getElementById('gate').classList.add('hidden');
+    // health renderer — smaller dots so the yellow (pre-2023) halo shows through
+    const sym=c=>new SimpleMarkerSymbol({color:c,size:8,outline:{color:"#fff",width:1.2}});
+    const renderer=new UniqueValueRenderer({field:"OVERHEAL",defaultSymbol:sym("#7A868E"),defaultLabel:"Other"});
+    Object.keys(HEALTH_COLOR).forEach(v=>renderer.addUniqueValueInfo({value:v,symbol:sym(HEALTH_COLOR[v])}));
+
+    treeLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["*"], renderer, minScale:15000, maxScale:0});
+    inspLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.inspTableId, outFields:["*"]});
+
+    const B=CONFIG.parcelBase;
+    const mapLayers=[];
+    // GRID — visible only when zoomed OUT, labelled with the page number
+    gridLayer=null;
+    if(CONFIG.gridUrl){ gridLayer=new FeatureLayer({url:CONFIG.gridUrl, minScale:0, maxScale:12000,
+      renderer:{type:"simple", symbol:{type:"simple-fill", color:[0,0,0,0], outline:{color:[130,180,255,0.7], width:1}}},
+      labelingInfo:[{symbol:{type:"text", color:"#A9C8FF", haloColor:"#0F151A", haloSize:1.4, font:{size:14,weight:"bold"}}, labelPlacement:"always-horizontal", labelExpressionInfo:{expression:"$feature."+CONFIG.gridLabelField}}]});
+      mapLayers.push(gridLayer); }
+    // PARCELS — visible when moderately zoomed in; disappear sooner when zooming out; address labels at full zoom
+    if(B){ parcelLayer=new FeatureLayer({url:B+"/"+CONFIG.parcelLayerId, outFields:[CONFIG.parcelAddressField], minScale:6000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-fill", color:[0,0,0,0], outline:{color:[255,255,255,0.5], width:0.7}}},
+      labelingInfo:[{minScale:2000, maxScale:0, symbol:{type:"text", color:"#E8EEF1", haloColor:"#0F151A", haloSize:1.2, font:{size:9}}, labelPlacement:"always-horizontal", labelExpressionInfo:{expression:"$feature."+CONFIG.parcelAddressField}}]});
+      mapLayers.push(parcelLayer); }
+    // ROADS — visible when zoomed IN, labelled with the street name
+    let roadsLayer=null;
+    if(CONFIG.roadsUrl){ roadsLayer=new FeatureLayer({url:CONFIG.roadsUrl, minScale:20000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-line", color:[255,224,130,0.55], width:1}},
+      labelingInfo:[{symbol:{type:"text", color:"#FFE082", haloColor:"#0F151A", haloSize:1.2, font:{size:9,weight:"bold"}}, labelPlacement:"center-along", labelExpressionInfo:{expression:"$feature."+CONFIG.roadsLabelField}}]});
+      mapLayers.push(roadsLayer); }
+    // OLD-TREE HALO — large transparent yellow dot behind trees dated before 2023
+    highlightWhere = CONFIG.oldTreeWhere || "1=2";
+    highlightLayer = new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, definitionExpression:highlightWhere, minScale:20000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-marker", color:[255,221,84,0.42], size:18, outline:{color:[255,221,84,0.6], width:1}}}});
+    mapLayers.push(highlightLayer);
+    mapLayers.push(treeLayer);   // main health-coloured trees on top
+
+    // York Region 2024 imagery as the default basemap (matches Field Maps)
+    let startBasemap=BASES[0];
+    if(CONFIG.yorkImageryUrl){
+      const yorkBase=new Basemap({baseLayers:[new TileLayer({url:CONFIG.yorkImageryUrl})], title:"York 2024", id:"york2024"});
+      BASES[0]=yorkBase; startBasemap=yorkBase;
+    }
+    map=new Map({basemap:startBasemap, layers:mapLayers});
+    view=new MapView({container:"map", map, zoom:16, center:[-79.4242,44.0088], ui:{components:["zoom"]}});
+
+    view.when(()=>{
+      document.getElementById('boot').classList.add('hidden');
+      treeLayer.when(()=>{
+        treeLayer.queryFeatureCount().then(n=>{document.getElementById('rTrees').textContent=n;});
+        if(treeLayer.fullExtent) view.goTo(treeLayer.fullExtent).catch(()=>{});
+      });
+      showIdentity();
+      loadTaxonomy();
+    });
+
+    view.on("click",(e)=>{
+      if(addMode){ placeProvisional(e.mapPoint); return; }
+      view.hitTest(e).then(res=>{
+        const hit=res.results.find(r=>r.graphic && r.graphic.layer===treeLayer);
+        if(hit) openTree(hit.graphic);
+      });
+    });
+
+    window.addEventListener("online", flushQueue);
+    window.addEventListener("offline", ()=>document.getElementById('offline').classList.add('show'));
+    if(!navigator.onLine) document.getElementById('offline').classList.add('show');
+    Buffer.init().then(()=>Buffer.count().then(updateQueueBadge));
+  }
+});
+
+/* ------------- helpers ------------- */const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+/* ------------- identity ------------- */
+function showIdentity(){
+  const d=DOMAINS.inspector_name||{};
+  document.getElementById('idQuick').innerHTML=Object.keys(d).map(c=>`<button onclick="pickInspector('${esc(c)}',this)">${esc(c)}</button>`).join('');
+  document.getElementById('idName').value = currentInspector && !(currentInspector in d) ? currentInspector : '';
+  idPick = currentInspector||'';
+  document.getElementById('identity').classList.remove('hidden');
+}
+function pickInspector(v,btn){ idPick=v; document.getElementById('idName').value=''; document.querySelectorAll('#idQuick button').forEach(b=>b.classList.remove('sel')); if(btn) btn.classList.add('sel'); }
+function commitIdentity(){
+  const typed=document.getElementById('idName').value.trim();
+  const who=typed||idPick;
+  if(!who){ toast('Enter your name or pick your initials','warn'); return; }
+  currentInspector=who; const c=document.getElementById('userChip'); if(c) c.textContent=who;
+  document.getElementById('identity').classList.add('hidden');
+  toast(`Logging as ${who}`,'ok');
+}
+/* custom confirm dialog (reliable across devices) */
+let cfCallback=null;
+function confirmDialog(title,msg,yesLabel,onYes){
+  document.getElementById('cfTitle').textContent=title;
+  document.getElementById('cfMsg').textContent=msg;
+  document.getElementById('cfYes').textContent=yesLabel||'Delete';
+  cfCallback=onYes;
+  document.getElementById('cfYes').onclick=()=>{ document.getElementById('confirmWrap').classList.remove('show'); if(cfCallback)cfCallback(); };
+  document.getElementById('confirmWrap').classList.add('show');
+}
+function cfNo(){ document.getElementById('confirmWrap').classList.remove('show'); cfCallback=null; }
+/* load & show attachments for a feature */
+function showAttachments(layer, oid, containerId, label){
+  const box=document.getElementById(containerId); if(!box)return;
+  if(!layer||oid==null){box.innerHTML='';return;}
+  layer.queryAttachments({objectIds:[oid]}).then(mapp=>{
+    const atts=(mapp&&mapp[oid])||[];
+    if(!atts.length){box.innerHTML='';return;}
+    box.innerHTML=`<div class="slabel">${label} · ${atts.length}</div><div class="att"><div class="grid" id="${containerId}_g"></div></div>`;
+    const g=document.getElementById(containerId+'_g');
+    atts.forEach(a=>{
+      const cell=document.createElement('div'); cell.className='thumb';
+      if(a.contentType&&a.contentType.indexOf('image')===0){
+        cell.innerHTML='<div class="file">…</div>';
+        // fetch through the SDK so the auth token is handled correctly, then show as a blob
+        esriRequest(a.url,{responseType:"blob",authMode:"auto"}).then(r=>{
+          const u=URL.createObjectURL(r.data);
+          cell.innerHTML=`<a href="${u}" target="_blank"><img src="${u}"></a>`;
+        }).catch(()=>{ cell.innerHTML='<div class="file">photo</div>'; });
+      } else {
+        cell.innerHTML=`<div class="file">${esc(a.name||'file')}</div>`;
+      }
+      g.appendChild(cell);
+    });
+  }).catch(()=>{box.innerHTML='';});
+}
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const val=v=>(v==null||v===''||v==='None')?'—':v;
+const dval=v=>(v==null||v==='')?'—':v;   // preserves 'None' for domains where it is a real value (e.g. Impediment)
+const healthColor=h=>HEALTH_COLOR[h]||'#7A868E';
+const attr=(g,k)=>g.attributes[k];
+function today(){return new Date().toISOString().slice(0,10);}
+function fmtDate(v){if(v==null||v==='')return '—';const d=new Date(v);return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10);}
+function options(dkey,current,blank){const d=DOMAINS[dkey]||{};let h=blank?'<option value="">—</option>':'';for(const c in d){h+=`<option value="${esc(c)}"${current===c?' selected':''}>${esc(d[c])}</option>`;}return h;}
+/* ---- species master list (from the official taxonomy table) + rapid-entry recents ---- */
+let taxoRows=[], taxoMap={}, recentSpecies=[], recentDbh=[];
+function loadTaxonomy(){
+  if(!taxoLayer) return;
+  taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName IS NOT NULL", outFields:["CommonName","Species","Family"], returnGeometry:false, orderByFields:["CommonName"], num:2000}))
+    .then(r=>{
+      taxoRows=r.features.map(f=>f.attributes).filter(a=>a.CommonName);
+      taxoMap={}; taxoRows.forEach(a=>{ taxoMap[String(a.CommonName).toLowerCase()]={SPECIES2:a.Species, FAMILY:a.Family}; });
+      // if a form is already open, refresh its species list
+      ['species'].forEach(id=>{const dl=document.getElementById(id); if(dl) dl.innerHTML=speciesOptions();});
+    }).catch(()=>{});
+}
+function pushRecent(arr,val){ if(val==null||val==='')return; const i=arr.findIndex(x=>String(x)===String(val)); if(i>=0)arr.splice(i,1); arr.unshift(val); if(arr.length>10)arr.length=10; }
+function speciesOptions(){
+  const names = taxoRows.length ? taxoRows.map(a=>a.CommonName) : Object.keys(DOMAINS.COMMON||{});
+  const seen={}, ordered=[];
+  recentSpecies.forEach(s=>{ if(!seen[s]){seen[s]=1;ordered.push(s);} });
+  names.forEach(s=>{ if(!seen[s]){seen[s]=1;ordered.push(s);} });
+  return ordered.map(c=>`<option value="${esc(c)}">`).join('');
+}
+function speciesDatalist(){ return speciesOptions(); }
+function dbhDatalist(){
+  const seen={}, ordered=[];
+  recentDbh.forEach(d=>{ if(!seen[d]){seen[d]=1;ordered.push(d);} });
+  for(let i=0;i<=249;i++){ if(!seen[i]){ordered.push(i);} }
+  return ordered.map(d=>`<option value="${d}">`).join('');
+}
+function gv(id){const el=document.getElementById(id);return el?el.value:'';}
+
+/* ------------- sheet ------------- */
+function openSheet(){document.getElementById('scrim').classList.add('show');document.getElementById('sheet').classList.add('up');}
+function closeSheet(){document.getElementById('scrim').classList.remove('show');document.getElementById('sheet').classList.remove('up');selectedGraphic=null;if(provisional){clearProvisional();if(addMode)toggleAdd();}}
+function setHead(e,t,s,c){document.getElementById('shEyebrow').textContent=e;document.getElementById('shTitle').textContent=t;document.getElementById('shSub').textContent=s||'';document.getElementById('shSpine').style.background=c||'#7A868E';}
+
+/* ------------- basemap ------------- */
+function cycleBase(){basemapToggleIdx=(basemapToggleIdx+1)%BASES.length;map.basemap=BASES[basemapToggleIdx];document.getElementById('btnBase').firstChild.textContent=['SAT','MAP','TOP'][basemapToggleIdx];document.getElementById('baseLbl').textContent=BASELBL[basemapToggleIdx];}
+
+/* ------------- add-tree ------------- */
+function toggleAdd(){addMode=!addMode;const f=document.getElementById('fabAdd');f.classList.toggle('arming',addMode);document.getElementById('addLbl').textContent=addMode?'Cancel':'Add tree';document.getElementById('arm').classList.toggle('show',addMode);if(!addMode)clearProvisional();}
+function clearProvisional(){if(provisional){view.graphics.remove(provisional);provisional=null;}}
+function placeProvisional(pt){clearProvisional();provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:14,outline:{color:"#fff",width:2}}});view.graphics.add(provisional);openNewTree(pt);}
+/* nearest-parcel address lookup (mirrors the Field Maps parcel logic) */
+function lookupAddress(point){
+  if(!parcelLayer||!CONFIG.parcelAddressField) return Promise.resolve(null);
+  const F=CONFIG.parcelAddressField;
+  return parcelLayer.queryFeatures({geometry:point, spatialRelationship:"intersects", outFields:[F], returnGeometry:false, num:1})
+    .then(r=>{
+      if(r.features.length) return r.features[0].attributes[F];   // tree sits inside a parcel
+      // fallback: closest parcel within 60 m (e.g. boulevard trees in the ROW)
+      return parcelLayer.queryFeatures({geometry:point, distance:60, units:"meters", spatialRelationship:"intersects", outFields:[F], returnGeometry:true})
+        .then(r2=>{
+          if(!r2.features.length) return null;
+          let best=null,bd=Infinity;
+          r2.features.forEach(f=>{const c=f.geometry&&(f.geometry.centroid||f.geometry);if(c&&c.x!=null){const dx=c.x-point.x,dy=c.y-point.y,d=dx*dx+dy*dy;if(d<bd){bd=d;best=f;}}});
+          return best?best.attributes[F]:null;
+        });
+    }).catch(()=>null);
+}
+let pendingAddress='';
+function fillAddressFromParcel(point){
+  pendingAddress='';
+  lookupAddress(point).then(addr=>{ if(addr) pendingAddress=addr; const el=document.getElementById('n_ADDRESS'); if(el&&addr&&!el.value) el.value=addr; });
+}
+/* ---- auto-populated / calculated fields ---- */
+function dbhDerived(dbh){
+  const d=parseFloat(dbh);
+  if(isNaN(d)||d<=0) return {HEIGHT:null,CROWNDIAM:null,AGECLASS:null};
+  return { HEIGHT:Math.round((2.62+0.314*d)*100)/100, CROWNDIAM:Math.round((1.68+0.202*d)*100)/100, AGECLASS:Math.ceil(d/10)*10 };
+}
+function taxoLookup(common){
+  if(!common) return Promise.resolve({});
+  const hit=taxoMap[String(common).toLowerCase()];
+  if(hit) return Promise.resolve(hit);
+  if(!taxoLayer) return Promise.resolve({});
+  return taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName = '"+String(common).replace(/'/g,"''")+"'", outFields:["Species","Family"], returnGeometry:false, num:1}))
+    .then(r=>{ if(!r.features.length) return {}; const a=r.features[0].attributes; return {SPECIES2:a.Species, FAMILY:a.Family}; })
+    .catch(()=>({}));
+}
+function computeGridXY(point){
+  const out={GRID:null,X:null,Y:null};
+  try{ if(projection&&point){ const utm=projection.project(point,new SpatialRef({wkid:CONFIG.utmWkid})); if(utm){ out.X=Math.round(utm.x*100)/100; out.Y=Math.round(utm.y*100)/100; } } }catch(e){}
+  const gp=(gridLayer? gridLayer.queryFeatures({geometry:point,spatialRelationship:"intersects",outFields:[CONFIG.gridLabelField],returnGeometry:false,num:1}).then(r=>r.features.length?r.features[0].attributes[CONFIG.gridLabelField]:null).catch(()=>null):Promise.resolve(null));
+  return gp.then(g=>{out.GRID=g;return out;});
+}
+function nextTreeNum(){
+  if(!treeLayer||!treeLayer.queryFeatures) return Promise.resolve(null);
+  return treeLayer.queryFeatures({where:"1=1",outStatistics:[{statisticType:"max",onStatisticField:"TREENUM_NEW",outStatisticFieldName:"mx"}],returnGeometry:false})
+    .then(r=>{const mx=r.features.length?r.features[0].attributes.mx:0;return (mx||0)+1;}).catch(()=>null);
+}
+function renderAuto(){
+  const el=document.getElementById('autoPanel'); if(!el)return;
+  const row=(k,v)=>`<div class="attr"><div class="k">${k}</div><div class="v">${v==null||v===''?'—':esc(v)}</div></div>`;
+  el.innerHTML=`<div class="slabel">Auto-filled</div><div class="attrs">
+    ${row('Latin name',derived.SPECIES2)}${row('Family',derived.FAMILY)}
+    ${row('Height (m)',derived.HEIGHT)}${row('Crown Ø (m)',derived.CROWNDIAM)}
+    ${row('Age class',derived.AGECLASS)}${row('Grid page',derived.GRID)}
+    ${derived.TREENUM_NEW!=null?row('Tree #',derived.TREENUM_NEW):''}${row('UTM X / Y',derived.X!=null?(derived.X+' / '+derived.Y):null)}
+  </div>`;
+}
+function autoOnDbh(id){ Object.assign(derived, dbhDerived(gv(id))); renderAuto(); }
+function autoOnSpecies(id){ taxoLookup(gv(id)).then(t=>{Object.assign(derived,t); renderAuto();}); }
+
+/* ------------- locate ------------- */
+function locate(){if(!navigator.geolocation){toast('Location not available','warn');return;}toast('Locating…');navigator.geolocation.getCurrentPosition(p=>{const pt=new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude});view.goTo({target:pt,zoom:19});if(addMode)placeProvisional(pt);else toast('Centered on your location','ok');},()=>toast('Location blocked — tap to place instead','warn'),{enableHighAccuracy:true,timeout:8000});}
+
+/* ------------- toast ------------- */
+let toastT;function toast(m,k){const el=document.getElementById('toast');const c=k==='ok'?cssv('--good'):k==='warn'?cssv('--amber'):k==='err'?cssv('--dead'):cssv('--muted');el.innerHTML=`<span class="tdot" style="background:${c}"></span>${m}`;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2800);}
+
+/* ------------- TREE detail ------------- */
+function openTree(g){
+  if(addMode)toggleAdd();
+  selectedGraphic=g; const a=g.attributes; const gid=a.GlobalID;
+  const color=healthColor(a.OVERHEAL);
+  const label=val(a.COMMON)!=='—'?a.COMMON:(val(a.SPECIES)!=='—'?a.SPECIES:'Unlabeled tree');
+  setHead('TREE · CURRENT STATE',label,[val(a.SPECIES),val(a.ADDRESS)].filter(x=>x!=='—').join(' · '),color);
+  if(g.geometry) view.goTo({target:g.geometry},{duration:400}).catch(()=>{});
+  const A=(k,v,full)=>`<div class="attr${full?' full':''}"><div class="k">${k}</div><div class="v">${esc(val(v))}</div></div>`;
+  document.getElementById('shBody').innerHTML=`
+    <div style="margin-top:12px"><span class="chip"><span class="dot" style="background:${color}"></span>${esc(val(a.OVERHEAL))}</span></div>
+    <div class="attrs">
+      ${A('Species (common)',a.COMMON)}${A('DBH (cm)',a.DBH)}${A('Height (m)',a.HEIGHT)}${A('Site',a.SITELOCA)}
+      ${A('Structural',a.STRUDEFE)}${A('Fail potential',a.FAILPOTE)}${A('Pest / disease',a.PESTDISEAS)}${A('Recommended',a.RECOTREA)}
+      ${val(a.ADDRESS)!=='—'?A('Address',a.ADDRESS,true):''}${val(a.COMMENTS)!=='—'?A('Comments',a.COMMENTS,true):''}
+    </div>
+    <div id="treePhotos"></div>
+    <div class="twobtn">
+      <button class="bigact edit" onclick="openEditTree()"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16v4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Edit tree</button>
+      <button class="bigact log" onclick="openInspection()"><svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4M4 6h16M4 18h16M4 12h3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>New log</button>
+    </div>
+    <div class="slabel">Activity log</div>
+    <div id="histBox"><div class="empty">Loading inspections…</div></div>`;
+  openSheet();
+  loadHistory(gid);
+  showAttachments(treeLayer, treeLayer&&a[treeLayer.objectIdField], 'treePhotos', 'Tree photos');
+}
+let histCache=[];
+function loadHistory(gid){
+  inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}'`, outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"]})
+    .then(res=>{
+      const box=document.getElementById('histBox'); if(!box)return;
+      histCache=res.features.map(f=>f.attributes);
+      if(!res.features.length){box.innerHTML='<div class="empty">No inspections recorded for this tree yet.</div>';return;}
+      box.innerHTML=res.features.map((f,i)=>inspRow(f.attributes,'synced',i)).join('');
+    }).catch(()=>{const box=document.getElementById('histBox');if(box)box.innerHTML='<div class="empty">Could not load history (offline?).</div>';});
+}
+function inspRow(i,status,idx){
+  const c=healthColor(i.condition_at_inspection);
+  const pill=status==='queued'?'<span class="pill queued">Queued</span>':'<span class="pill synced">Synced</span>';
+  const meta=[i.inspector_name,i.condition_at_inspection&&('Cond: '+i.condition_at_inspection),i.recommendations&&('→ '+i.recommendations),i.maintenance_notes].filter(Boolean).join(' · ');
+  const click = (idx!=null)?` style="cursor:pointer" onclick="viewInsp(${idx})"`:'';
+  const chev = (idx!=null)?' ›':'';
+  return `<div class="insp"${click}><div class="spine" style="background:${c}"></div><div class="body"><div class="row1"><div class="act">${esc(i.activity_type||'Activity')}${pill}</div><div class="date">${esc(fmtDate(i.inspection_date))}${chev}</div></div><div class="meta">${esc(meta||'—')}</div></div></div>`;
+}
+function viewInsp(idx){
+  const i=histCache[idx]; if(!i)return;
+  const c=healthColor(i.condition_at_inspection);
+  setHead('LOG RECORD',i.activity_type||'Activity',fmtDate(i.inspection_date)+' · '+val(i.inspector_name),c);
+  const A=(k,v)=>val(v)==='—'?'':`<div class="attr"><div class="k">${k}</div><div class="v">${esc(val(v))}</div></div>`;
+  const isAssess=(i.activity_type==='Inspection'||i.activity_type==='Planted');
+  document.getElementById('shBody').innerHTML=`
+    <div class="attrs" style="margin-top:12px">
+      ${A('Activity',i.activity_type)}${A('Inspector',i.inspector_name)}${A('Date',fmtDate(i.inspection_date))}
+      ${isAssess?A('Condition',i.condition_at_inspection):''}${isAssess?A('Structural',i.Structdefe_at_inspection):''}
+      ${isAssess?A('Wound / canker',i.Woundcank_at_inspection):''}${isAssess?A('Dead / decay',i.Deaddecay_at_inspection):''}
+      ${isAssess?A('Failure potential',i.Failpote_at_inspection):''}${isAssess?A('Pest / disease',i.Pestdisease_at_inspection):''}
+      ${isAssess?A('Impediment',i.Impediment_at_inspection):''}${isAssess?A('DBH',i.DBH):''}${isAssess?A('Recommended',i.recommendations):''}
+      ${i.maintenance_notes?`<div class="attr full"><div class="k">Notes</div><div class="v">${esc(i.maintenance_notes)}</div></div>`:'<div class="attr full"><div class="k">Notes</div><div class="v">—</div></div>'}
+    </div>
+    <div id="inspPhotos"></div>
+    <div class="twobtn" style="margin-top:14px">
+      <button class="bigact log" onclick="editInsp(${idx})"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16v4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Edit log</button>
+      <button class="bigact" style="background:rgba(208,64,43,.14);color:var(--dead)" onclick="deleteInsp(${idx})"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Delete log</button>
+    </div>
+    <div class="actions"><button class="btn ghost" style="width:100%" onclick="openTree(selectedGraphic)">Back to tree</button></div>`;
+  openSheet();
+  showAttachments(inspLayer, i[inspLayer.objectIdField], 'inspPhotos', 'Photos');
+}
+function deleteInsp(idx){
+  const i=histCache[idx]; if(!i)return;
+  confirmDialog('Delete this log?','This permanently removes this activity-log record. This cannot be undone.','Delete log',()=>{
+    const oid=i[inspLayer.objectIdField];
+    inspLayer.applyEdits({deleteFeatures:[{objectId:oid}]}).then(r=>{
+      if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
+      toast('Log deleted','ok'); openTree(selectedGraphic);
+    }).catch(err=>toast('Delete failed: '+(err.message||err),'err'));
+  });
+}
+function editInsp(idx){
+  const i=histCache[idx]; if(!i){return;}
+  openInspection(selectedGraphic, i.activity_type, i);
+}
+
+/* ------------- EDIT tree ------------- */
+function openEditTree(){
+  const g=selectedGraphic; if(!g)return; const a=g.attributes;
+  derived={SPECIES2:a.SPECIES2, FAMILY:a.FAMILY, HEIGHT:a.HEIGHT, CROWNDIAM:a.CROWNDIAM, AGECLASS:a.AGECLASS, GRID:a.GRID, X:a.X, Y:a.Y};
+  setHead('TREE · EDIT CURRENT STATE',val(a.COMMON)!=='—'?a.COMMON:'Tree','Overwrites the persistent tree record',healthColor(a.OVERHEAL));
+  document.getElementById('shBody').innerHTML=`
+    <div class="field"><label>Species — common name</label><input list="species" id="e_COMMON" value="${esc(a.COMMON==='None'?'':a.COMMON||'')}" onchange="autoOnSpecies('e_COMMON')"><datalist id="species">${speciesDatalist()}</datalist></div>
+    <div class="field"><label>DBH (cm)</label><input type="number" inputmode="decimal" id="e_DBH" value="${esc(a.DBH??'')}" list="dbhlist" oninput="autoOnDbh('e_DBH')"><datalist id="dbhlist">${dbhDatalist()}</datalist></div>
+    <div class="field"><label>Overall health</label><select id="e_OVERHEAL">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
+    <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
+    <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
+    <div class="field"><label>Pest / disease</label><select id="e_PESTDISEAS">${options('PESTDISEAS',a.PESTDISEAS,true)}</select></div>
+    <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
+    <div class="field"><label>Comments (persistent)</label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
+    <div id="autoPanel"></div>
+    <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
+    <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
+  openSheet();
+  renderAuto();
+  if(g.geometry) computeGridXY(g.geometry).then(o=>{Object.assign(derived,o);renderAuto();});
+}
+function deleteTree(){
+  const g=selectedGraphic; if(!g)return;
+  confirmDialog('Delete this tree?','This permanently removes the tree and its logs from the layer. This cannot be undone.','Delete tree',()=>{
+    treeLayer.applyEdits({deleteFeatures:[g]}).then(r=>{
+      if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
+      treeLayer.refresh(); treeLayer.queryFeatureCount().then(n=>document.getElementById('rTrees').textContent=n);
+      toast('Tree deleted','ok'); closeSheet();
+    }).catch(err=>toast('Delete failed: '+(err.message||err),'err'));
+  });
+}
+function saveTree(){
+  const g=selectedGraphic; if(!g)return;
+  ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','FAILPOTE','PESTDISEAS','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
+  g.attributes.DBH=gv('e_DBH')===''?null:parseFloat(gv('e_DBH'));
+  Object.assign(derived, dbhDerived(gv('e_DBH')));
+  pushRecent(recentSpecies, gv('e_COMMON')); if(gv('e_DBH')!=='') pushRecent(recentDbh, parseFloat(gv('e_DBH')));
+  const btn=document.getElementById('e_save'); if(btn){btn.disabled=true; btn.textContent='Saving…';}
+  Promise.resolve(taxoLookup(gv('e_COMMON')).then(t=>Object.assign(derived,t))).then(()=>{
+    Object.assign(g.attributes, {HEIGHT:derived.HEIGHT, CROWNDIAM:derived.CROWNDIAM, AGECLASS:derived.AGECLASS,
+      SPECIES2:derived.SPECIES2, FAMILY:derived.FAMILY, GRID:derived.GRID, X:derived.X, Y:derived.Y});
+    treeLayer.applyEdits({updateFeatures:[g]}).then(r=>{
+      if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
+      treeLayer.refresh(); toast('Tree record updated','ok'); bumpDay('edit'); openTree(g);
+    }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Save tree';} toast('Save failed: '+(err.message||err),'err'); });
+  });
+}
+
+/* ------------- NEW tree ------------- */
+function openNewTree(pt){
+  derived={};
+  setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
+  document.getElementById('shBody').innerHTML=`
+    <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input list="species" id="n_COMMON" value="${esc(recentSpecies[0]||'')}" placeholder="Start typing…" onchange="autoOnSpecies('n_COMMON')"><datalist id="species">${speciesDatalist()}</datalist></div>
+    <div class="field"><label>DBH (cm)</label><input type="number" inputmode="decimal" id="n_DBH" list="dbhlist" oninput="autoOnDbh('n_DBH')"><datalist id="dbhlist">${dbhDatalist()}</datalist></div>
+    <div class="field"><label>Overall health</label><select id="n_OVERHEAL">${options('OVERHEAL','Good',false)}</select></div>
+    <div class="field"><label>Site location</label><select id="n_SITELOCA">${options('SITELOCA','Boulevard',false)}</select></div>
+    <div class="slabel">Condition &amp; defect assessment</div>
+    <div class="frow"><div class="field"><label>Structural</label><select id="n_STRUDEFE">${options('STRUDEFE','No problem',false)}</select></div><div class="field"><label>Wound / canker</label><select id="n_WOUNCANK">${options('WOUNCANK','No problem',false)}</select></div></div>
+    <div class="frow"><div class="field"><label>Dead / decay</label><select id="n_DEADDECAY">${options('DEADDECAY','NO PROBLEM (no visible problem)',false)}</select></div><div class="field"><label>Failure potential</label><select id="n_FAILPOTE">${options('FAILPOTE','Low',false)}</select></div></div>
+    <div class="field"><label>Pest / disease</label><select id="n_PESTDISEAS">${options('PESTDISEAS','None observed',false)}</select></div>
+    <div class="field"><label>Impediment</label><select id="n_IMPEDMNT">${options('IMPEDMNT','None',false)}</select></div>
+    <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
+    <div class="field"><label>Comments</label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
+    <div id="autoPanel"></div>
+    <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
+  openSheet();
+  fillAddressFromParcel(pt);
+  renderAuto();
+  if(recentSpecies[0]) autoOnSpecies('n_COMMON');
+  computeGridXY(pt).then(o=>{Object.assign(derived,o);renderAuto();});
+  nextTreeNum().then(n=>{derived.TREENUM_NEW=n;renderAuto();});
+}
+function saveNewTree(){
+  if(!provisional){toast('No location set','warn');return;}
+  const common=gv('n_COMMON').trim(); if(!common){toast('Species is required','warn');return;}
+  Object.assign(derived, dbhDerived(gv('n_DBH')));
+  pushRecent(recentSpecies, common); if(gv('n_DBH')!=='') pushRecent(recentDbh, parseFloat(gv('n_DBH')));
+  const btn=document.getElementById('n_save'); if(btn){btn.disabled=true; btn.textContent='Creating…';}
+  // ensure taxonomy resolved before writing
+  Promise.resolve(derived.SPECIES2!==undefined?derived:taxoLookup(common).then(t=>Object.assign(derived,t))).then(()=>{
+  const g=new GraphicC({geometry:provisional.geometry, attributes:{
+    COMMON:common, DBH:gv('n_DBH')?parseFloat(gv('n_DBH')):null, HEIGHT:derived.HEIGHT,
+    OVERHEAL:gv('n_OVERHEAL'), SITELOCA:gv('n_SITELOCA'), ADDRESS:pendingAddress||null, COMMENTS:gv('n_COMMENTS'),
+    STRUDEFE:gv('n_STRUDEFE'), WOUNCANK:gv('n_WOUNCANK'), DEADDECAY:gv('n_DEADDECAY'),
+    FAILPOTE:gv('n_FAILPOTE'), PESTDISEAS:gv('n_PESTDISEAS'), IMPEDMNT:gv('n_IMPEDMNT'), RECOTREA:gv('n_RECOTREA'),
+    SPECIES2:derived.SPECIES2, FAMILY:derived.FAMILY, CROWNDIAM:derived.CROWNDIAM, AGECLASS:derived.AGECLASS,
+    GRID:derived.GRID, X:derived.X, Y:derived.Y, TREENUM_NEW:derived.TREENUM_NEW
+  }});
+  treeLayer.applyEdits({addFeatures:[g]}).then(r=>{
+    const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+    clearProvisional(); if(addMode)toggleAdd(); treeLayer.refresh(); bumpDay('add');
+    return treeLayer.queryFeatures({objectIds:[res.objectId], outFields:["*"]});
+  }).then(q=>{
+    const ng=q.features[0]; treeLayer.queryFeatureCount().then(n=>document.getElementById('rTrees').textContent=n);
+    toast('Tree created — log its first activity','ok'); openInspection(ng,'Inspection');
+  }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Create tree';} toast('Create failed: '+(err.message||err),'err'); });
+  });
+}
+
+/* ------------- INSPECTION ------------- */
+let photoFile=null, editingInsp=null, resyncSnapshot=false;
+function resyncFromTree(){
+  const a=selectedGraphic&&selectedGraphic.attributes; if(!a)return;
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=dval(v);};
+  set('lk_species',a.COMMON); set('lk_cond',a.OVERHEAL); set('lk_struct',a.STRUDEFE); set('lk_wound',a.WOUNCANK);
+  set('lk_decay',a.DEADDECAY); set('lk_fail',a.FAILPOTE); set('lk_pest',a.PESTDISEAS); set('lk_imped',a.IMPEDMNT);
+  set('lk_dbh',a.DBH); set('lk_rec',a.RECOTREA);
+  resyncSnapshot=true; toast('Snapshot re-synced from tree — save to apply','ok');
+}
+function openInspection(g,preset,editRec){
+  g=g||selectedGraphic; if(!g)return; selectedGraphic=g; const a=g.attributes; photoFile=null;
+  editingInsp = editRec||null; resyncSnapshot=false;
+  const R = editRec||{};
+  setHead(editRec?'TREE LOG · EDIT':'TREE LOG · NEW',val(a.COMMON)!=='—'?a.COMMON:'Tree',
+          editRec?'Updates this log record':'Records an activity against this tree',healthColor(a.OVERHEAL));
+  document.getElementById('shBody').innerHTML=`
+    <div class="field"><label>Activity type <span class="req">*</span></label><select id="i_activity" onchange="applyActivity()">${options('activity_type',editRec?R.activity_type:(preset||'Inspection'),false)}</select></div>
+    <div class="frow"><div class="field"><label>Inspector</label><input id="i_inspector" list="inspectors" value="${esc(editRec?(R.inspector_name||''):(currentInspector||''))}" placeholder="Name or initials"><datalist id="inspectors">${Object.keys(DOMAINS.inspector_name||{}).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div><div class="field"><label>Date</label><input type="date" id="i_date" value="${editRec?esc(fmtDate(R.inspection_date)):today()}"></div></div>
+    <div class="grp-snapnote treenote hide">🔒 <b>Condition &amp; defects are pulled from the tree record.</b> To change them, go Back → <b>Edit tree</b> first, then log the inspection.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
+    <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
+    <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
+    <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
+      <div class="frow"><div class="field"><label>Structural</label><div class="locked" id="lk_struct">${esc(dval(editRec?R.Structdefe_at_inspection:a.STRUDEFE))}</div></div><div class="field"><label>Wound / canker</label><div class="locked" id="lk_wound">${esc(dval(editRec?R.Woundcank_at_inspection:a.WOUNCANK))}</div></div></div>
+      <div class="frow"><div class="field"><label>Dead / decay</label><div class="locked" id="lk_decay">${esc(dval(editRec?R.Deaddecay_at_inspection:a.DEADDECAY))}</div></div><div class="field"><label>Failure potential</label><div class="locked" id="lk_fail">${esc(dval(editRec?R.Failpote_at_inspection:a.FAILPOTE))}</div></div></div>
+      <div class="field"><label>Pest / disease</label><div class="locked" id="lk_pest">${esc(dval(editRec?R.Pestdisease_at_inspection:a.PESTDISEAS))}</div></div>
+      <div class="field"><label>Impediment</label><div class="locked" id="lk_imped">${esc(dval(editRec?R.Impediment_at_inspection:a.IMPEDMNT))}</div></div></div>
+    <div class="field grp-dbh hide"><label>DBH (cm) · from tree</label><div class="locked" id="lk_dbh">${esc(dval(editRec?R.DBH:a.DBH))}</div></div>
+    <div class="field grp-removal hide"><label>Removal reason</label><select id="i_removal">${options('Removal_reason',editRec?R.Removal_reason:'',true)}</select></div>
+    <div class="field grp-recommend hide"><label>Recommended treatment · from tree</label><div class="locked" id="lk_rec">${esc(dval(editRec?R.recommendations:a.RECOTREA))}</div></div>
+    <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
+    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to capture / attach photo</div></label></div>
+    <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn primary" id="i_submit" onclick="submitInspection()">${editRec?'Save changes':'Save log'}</button></div>`;
+  applyActivity(); openSheet();
+}
+function show(sel,on){document.querySelectorAll(sel).forEach(e=>e.classList.toggle('hide',!on));}
+function applyActivity(){
+  const act=gv('i_activity');const gr=ACT_FIELDS[act]||[];
+  show('.grp-condition',gr.includes('condition'));show('.grp-defects',gr.includes('defects'));show('.grp-dbh',gr.includes('dbh'));
+  show('.grp-recommend',gr.includes('recommend'));show('.grp-removal',gr.includes('removal'));show('.grp-species',gr.includes('species'));
+  show('.grp-snapnote', act==='Inspection'||act==='Planted');
+  const b=document.getElementById('i_submit');if(b)b.textContent=act==='Removed'?'Submit removal':act==='Planted'?'Submit planting':'Save log';
+}
+function onPhoto(ev){const f=ev.target.files&&ev.target.files[0];if(!f)return;photoFile=f;const w=document.getElementById('i_photowrap');w.classList.add('has');const r=new FileReader();r.onload=e=>{w.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · attached</div>`;};r.readAsDataURL(f);}
+function buildInspectionAttrs(gid){
+  const act=gv('i_activity');
+  const a=(selectedGraphic&&selectedGraphic.attributes)||{};
+  const base={
+    [CONFIG.fkField]:gid, activity_type:act, inspector_name:gv('i_inspector'),
+    inspection_date:(gv('i_date')||today()), ACTIVITY_DATE:(gv('i_date')||today()),
+    Removal_reason:gv('i_removal'), maintenance_notes:gv('i_notes')
+  };
+  // condition/defects/dbh/recommendation are derived from the tree (read-only in the log)
+  if(act==='Inspection'||act==='Planted'){
+    Object.assign(base,{
+      condition_at_inspection:a.OVERHEAL, Structdefe_at_inspection:a.STRUDEFE, Woundcank_at_inspection:a.WOUNCANK,
+      Deaddecay_at_inspection:a.DEADDECAY, Failpote_at_inspection:a.FAILPOTE, Pestdisease_at_inspection:a.PESTDISEAS,
+      Impediment_at_inspection:a.IMPEDMNT, DBH:(a.DBH!=null?a.DBH:null), recommendations:a.RECOTREA, Species:a.COMMON
+    });
+  }
+  return base;
+}
+function submitInspection(){
+  const g=selectedGraphic; if(!g)return; const gid=g.attributes.GlobalID;
+  const act=gv('i_activity'); if(!act){toast('Choose an activity type','warn');return;}
+  const attrs=buildInspectionAttrs(gid);
+  const btn=document.getElementById('i_submit'); btn.disabled=true; btn.textContent='Saving…';
+
+  // ---- EDIT existing log: update the editable fields only, keep the recorded snapshot ----
+  if(editingInsp){
+    const oid=editingInsp[inspLayer.objectIdField];
+    const upd={ [inspLayer.objectIdField]:oid,
+      activity_type:attrs.activity_type, inspector_name:attrs.inspector_name,
+      inspection_date:attrs.inspection_date, ACTIVITY_DATE:attrs.ACTIVITY_DATE,
+      Removal_reason:attrs.Removal_reason, maintenance_notes:attrs.maintenance_notes };
+    if(resyncSnapshot){ const a=g.attributes; Object.assign(upd,{
+      condition_at_inspection:a.OVERHEAL, Structdefe_at_inspection:a.STRUDEFE, Woundcank_at_inspection:a.WOUNCANK,
+      Deaddecay_at_inspection:a.DEADDECAY, Failpote_at_inspection:a.FAILPOTE, Pestdisease_at_inspection:a.PESTDISEAS,
+      Impediment_at_inspection:a.IMPEDMNT, DBH:(a.DBH!=null?a.DBH:null), recommendations:a.RECOTREA, Species:a.COMMON }); }
+    inspLayer.applyEdits({updateFeatures:[{attributes:upd}]}).then(r=>{
+      if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
+      editingInsp=null; resyncSnapshot=false; toast('Log updated','ok'); openTree(g);
+    }).catch(err=>{ btn.disabled=false; btn.textContent='Save changes'; toast('Update failed: '+(err.message||err),'err'); });
+    return;
+  }
+
+  if(!navigator.onLine){
+    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile}).then(()=>{
+      Buffer.count().then(updateQueueBadge);
+      if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;treeLayer.refresh();}
+      toast('Offline — log saved on device','warn'); openTree(g);
+    });
+    return;
+  }
+  const feature=new GraphicC({attributes:attrs});
+  inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
+    const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+    bumpDay('log');
+    if(photoFile){ return addPhoto(res.objectId, photoFile); }
+  }).then(()=>{
+    if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
+      treeLayer.applyEdits({updateFeatures:[g]}).then(()=>treeLayer.refresh());}
+    toast('Log saved','ok'); openTree(g);
+  }).catch(err=>{
+    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');openTree(g);});
+  });
+}
+function addPhoto(oid, file){
+  const fd=new FormData(); fd.append("attachment", file);
+  return inspLayer.addAttachment(new GraphicC({attributes:{[inspLayer.objectIdField]:oid}}), fd);
+}
+
+/* ------------- offline buffer (IndexedDB) ------------- */
+const Buffer={
+  db:null,
+  init(){return new Promise((res)=>{const rq=indexedDB.open('aurora-canopy',1);rq.onupgradeneeded=e=>{e.target.result.createObjectStore('pending',{keyPath:'id',autoIncrement:true});};rq.onsuccess=e=>{this.db=e.target.result;res();};rq.onerror=()=>res();});},
+  add(rec){return new Promise((res)=>{if(!this.db)return res();const tx=this.db.transaction('pending','readwrite');tx.objectStore('pending').add(rec);tx.oncomplete=()=>res();tx.onerror=()=>res();});},
+  all(){return new Promise((res)=>{if(!this.db)return res([]);const out=[];const tx=this.db.transaction('pending','readonly');tx.objectStore('pending').openCursor().onsuccess=e=>{const c=e.target.result;if(c){out.push({id:c.key,...c.value});c.continue();}else res(out);};});},
+  remove(id){return new Promise((res)=>{if(!this.db)return res();const tx=this.db.transaction('pending','readwrite');tx.objectStore('pending').delete(id);tx.oncomplete=()=>res();});},
+  count(){return this.all().then(a=>a.length);}
+};
+function updateQueueBadge(n){const el=document.getElementById('rQueue');if(el){el.textContent=n;el.style.color=n?cssv('--amber'):'';}document.getElementById('syncLbl').textContent=n?('pending '+n):'idle';}
+function flushQueue(){
+  document.getElementById('offline').classList.remove('show');
+  Buffer.all().then(items=>{
+    if(!items.length)return;
+    toast(`Reconnected — syncing ${items.length}…`);
+    document.getElementById('syncLbl').textContent='syncing…';
+    (function next(i){
+      if(i>=items.length){Buffer.count().then(updateQueueBadge);toast('All buffered edits synced','ok');if(selectedGraphic)openTree(selectedGraphic);return;}
+      const it=items[i];
+      const feature=new GraphicC({attributes:it.attributes});
+      inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
+        const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+        bumpDay('log');
+        if(it.photo) return addPhoto(res.objectId, it.photo);
+      }).then(()=>Buffer.remove(it.id)).then(()=>{Buffer.count().then(updateQueueBadge);next(i+1);})
+      .catch(()=>next(i+1)); // leave in buffer, try later
+    })(0);
+  });
+}
+
+/* ------------- records / sync panel ------------- */
+/* ---- map highlight by last-inventory date (DATE_NEW) ---- */
+function applyHighlight(where,lbl){
+  highlightWhere=where;
+  if(highlightLayer) highlightLayer.definitionExpression=where;
+  const el=document.getElementById('flagLbl'); if(el)el.textContent=lbl;
+  const btn=document.getElementById('btnFlag'); if(btn)btn.classList.toggle('on', where!=="1=2");
+  toast('Highlight: '+lbl,'ok'); closeSheet();
+}
+function setHighlight(kind){
+  const iso=y=>{const d=new Date();d.setFullYear(d.getFullYear()-y);return d.toISOString().slice(0,10);};
+  if(kind==='off') return applyHighlight("1=2","off");
+  if(kind==='pre2023') return applyHighlight("DATE_NEW < DATE '2023-01-01'","pre-2023");
+  if(kind==='1') return applyHighlight("DATE_NEW >= DATE '"+iso(1)+"'","last 12 mo");
+  return applyHighlight("DATE_NEW < DATE '"+iso(parseInt(kind,10))+"'",kind+"+ yr");
+}
+function applyHighlightCustom(){
+  const f=gv('hlFrom'), t=gv('hlTo'); const parts=[];
+  if(f) parts.push("DATE_NEW >= DATE '"+f+"'");
+  if(t){ const d=new Date(t); d.setDate(d.getDate()+1); parts.push("DATE_NEW < DATE '"+d.toISOString().slice(0,10)+"'"); }
+  if(!parts.length){ toast('Pick a from or to date','warn'); return; }
+  applyHighlight(parts.join(" AND "), (f||'…')+' → '+(t||'…'));
+}
+function openHighlight(){
+  if(addMode)toggleAdd(); selectedGraphic=null;
+  setHead('MAP HIGHLIGHT','Flag trees by last-inventory date','Yellow halo marks the matches',cssv('--amber'));
+  document.getElementById('shBody').innerHTML=`
+    <div class="treenote" style="margin-top:10px">Trees whose <b>last inventory date</b> falls in the chosen range get a yellow halo on the map — a fast way to see which trees are due to be re-inventoried.</div>
+    <div class="slabel">Quick picks</div>
+    <div class="hlpicks">
+      <button class="hlp" onclick="setHighlight('off')">Off</button>
+      <button class="hlp" onclick="setHighlight('pre2023')">Before 2023</button>
+      <button class="hlp" onclick="setHighlight('5')">Not seen 5+ yr</button>
+      <button class="hlp" onclick="setHighlight('2')">Not seen 2+ yr</button>
+      <button class="hlp" onclick="setHighlight('1')">Last 12 months</button>
+    </div>
+    <div class="slabel">Custom range · last inventory date</div>
+    <div class="frow"><div class="field"><label>From</label><input type="date" id="hlFrom"></div><div class="field"><label>To</label><input type="date" id="hlTo"></div></div>
+    <div class="actions"><button class="btn ghost" onclick="closeSheet()">Close</button><button class="btn brand" onclick="applyHighlightCustom()">Apply range</button></div>`;
+  openSheet();
+}
+function openDashboard(){
+  if(addMode)toggleAdd(); selectedGraphic=null;
+  setHead('DASHBOARD · TODAY', currentInspector?('Logging as '+currentInspector):'Daily activity', new Date().toDateString(), cssv('--brand'));
+  const total=dayAdded+dayEdited+dayLogged;
+  const body=document.getElementById('shBody');
+  body.innerHTML=`
+    <div class="attrs" style="grid-template-columns:1fr 1fr;margin-top:12px">
+      <div class="attr"><div class="k">Trees added (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayAdded}</div></div>
+      <div class="attr"><div class="k">Trees edited (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayEdited}</div></div>
+      <div class="attr"><div class="k">Logs recorded (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayLogged}</div></div>
+      <div class="attr"><div class="k">Total actions (session)</div><div class="v" style="font-size:26px;font-family:var(--mono);color:var(--amber)">${total}</div></div>
+    </div>
+    <div class="note" style="margin-top:6px">Session counts update live as you work. Below is today's total across everyone, pulled from the layer.</div>
+    <div class="slabel">Today · from the live layer</div>
+    <div id="dashLive"><div class="empty">Loading…</div></div>
+    <div class="slabel">Logs today by inspector</div>
+    <div id="dashInsp"><div class="empty">Loading…</div></div>
+    <div class="slabel">Logs today by activity</div>
+    <div id="dashAct"><div class="empty">Loading…</div></div>
+    <div class="actions"><button class="btn brand" onclick="closeSheet()">Done</button></div>`;
+  openSheet();
+  const t=new Date().toISOString().slice(0,10);
+  const wAdd=`CreationDate >= DATE '${t}'`, wEdit=`EditDate >= DATE '${t}' AND CreationDate < DATE '${t}'`, wLog=`CreationDate >= DATE '${t}'`;
+  Promise.all([
+    treeLayer.queryFeatureCount({where:wAdd}).catch(()=>null),
+    treeLayer.queryFeatureCount({where:wEdit}).catch(()=>null),
+    inspLayer.queryFeatureCount({where:wLog}).catch(()=>null)
+  ]).then(([added,edited,logged])=>{
+    const box=document.getElementById('dashLive'); if(!box)return;
+    if(added==null&&edited==null&&logged==null){ box.innerHTML='<div class="empty">Live totals need editor tracking enabled on the service — using session counts above.</div>'; return; }
+    const bar=(lab,v,mx,c)=>`<div class="bar"><div class="lab">${lab}</div><div class="track"><div class="fill" style="width:${mx?Math.max(4,v/mx*100):4}%;background:${c}"></div></div><div class="vv">${v}</div></div>`;
+    const mx=Math.max(added||0,edited||0,logged||0,1);
+    box.innerHTML=bar('Added',added||0,mx,cssv('--good'))+bar('Edited',edited||0,mx,cssv('--pot'))+bar('Logged',logged||0,mx,cssv('--amber'));
+  });
+  inspLayer.queryFeatures({where:wLog, outFields:["inspector_name","activity_type"], returnGeometry:false}).then(res=>{
+    const byI={}, byA={};
+    res.features.forEach(f=>{const a=f.attributes;const ins=a.inspector_name||'(none)';const act=a.activity_type||'(none)';byI[ins]=(byI[ins]||0)+1;byA[act]=(byA[act]||0)+1;});
+    const render=(obj,cid,c)=>{const el=document.getElementById(cid);if(!el)return;const ent=Object.entries(obj).sort((x,y)=>y[1]-x[1]);if(!ent.length){el.innerHTML='<div class="empty">No logs today.</div>';return;}const mx=Math.max(...ent.map(e=>e[1]));el.innerHTML=ent.map(([k,v])=>`<div class="bar"><div class="lab">${esc(k)}</div><div class="track"><div class="fill" style="width:${Math.max(4,v/mx*100)}%;background:${c}"></div></div><div class="vv">${v}</div></div>`).join('');};
+    render(byI,'dashInsp',cssv('--brand')); render(byA,'dashAct',cssv('--sat'));
+  }).catch(()=>{
+    ['dashInsp','dashAct'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<div class="empty">Could not load.</div>';});
+  });
+}
+function openRecords(){
+  if(addMode)toggleAdd(); selectedGraphic=null;
+  setHead('SESSION · SYNC & EXPORT','This session','Live edits and the deliverable path',cssv('--brand'));
+  Buffer.count().then(q=>{
+    document.getElementById('shBody').innerHTML=`
+      <div class="attrs" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="attr"><div class="k">Logged</div><div class="v">${dayLogged}</div></div>
+        <div class="attr"><div class="k">Buffered</div><div class="v" style="color:${q?cssv('--amber'):''}">${q}</div></div>
+        <div class="attr"><div class="k">Network</div><div class="v">${navigator.onLine?'online':'offline'}</div></div>
+      </div>
+      <div class="note">Every inspection is one row in <b>treeinspections</b> with <b>${CONFIG.fkField}</b> = the tree's GlobalID — written live to your hosted service via <b>applyEdits</b>. Photos attach via <b>addAttachment</b>. Offline edits are held in this device's buffer and flush automatically on reconnect.</div>
+      ${q?`<div class="actions"><button class="btn primary" onclick="flushQueue();closeSheet()">Sync ${q} now</button></div>`:''}
+      <div class="slabel">Deliverable</div>
+      <div class="note">The Town gets a geodatabase straight from ArcGIS Online: the layer's item page → <b>Export Data → File Geodatabase</b> includes attachments, anytime — no pipeline needed.</div>
+      <div class="actions"><button class="btn brand" onclick="closeSheet()">Done</button></div>`;
+    openSheet();
+  });
+}
+</script>
+</body>
+</html>
