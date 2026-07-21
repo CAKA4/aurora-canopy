@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Town of Aurora — Tree Inventory Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#0F151A;--panel:#18212A;--panel2:#1F2B35;--line:#2C3A46;
+  --text:#EAF1F4;--muted:#93A2AD;--brand:#2C7A54;--amber:#FFB100;
+  --good:#3FA45B;--sat:#7CB342;--pot:#E0B400;--dec:#E8862B;--dead:#D0402B;--gone:#7A868E;
+  --sans:'Barlow Semi Condensed',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);background:var(--ink);color:var(--text);min-height:100vh;
+  background-image:radial-gradient(1200px 600px at 80% -10%,rgba(44,122,84,.12),transparent)}
+.wrap{max-width:1240px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.mk{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center;flex:none}
+.mk svg{width:20px;height:20px}
+.wm{color:#fff;font-weight:700}
+.iq{color:#5FD08A;font-weight:800;letter-spacing:.01em}
+.tld{color:var(--muted);font-weight:600;font-size:.72em}
+h1{font-size:22px;font-weight:700;margin:0;letter-spacing:.01em;line-height:1}
+h1 span{color:var(--muted);font-weight:500}
+.eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.live{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:12px}
+.live .d{width:8px;height:8px;border-radius:50%;background:var(--good);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,164,91,.5)}70%{box-shadow:0 0 0 7px rgba(63,164,91,0)}100%{box-shadow:0 0 0 0 rgba(63,164,91,0)}}
+#refresh{margin-left:auto;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:13px;padding:8px 14px;border-radius:10px;cursor:pointer}
+.mapcard{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:16px}
+.datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.datebar .dblab{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.dbp{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:12.5px;padding:6px 11px;border-radius:8px;cursor:pointer}
+.dbp.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.dbcustom{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin-left:6px}
+.dbcustom input{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px 7px;font-family:var(--mono);font-size:12px;color-scheme:dark}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.chip{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:13px;padding:8px 13px;border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:7px;transition:.15s}
+.chip .dot{width:9px;height:9px;border-radius:50%}
+.chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.chip:hover{border-color:var(--muted)}
+#map{height:460px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.mapfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px}
+.showing{font-size:14px}.showing b{font-family:var(--mono);color:var(--amber);font-size:18px}
+.dl{background:var(--good);color:#08130c;border:none;font-family:var(--sans);font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.dl:disabled{opacity:.5;cursor:default}
+.dl.ghost{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+/* canopy analytics modal */
+#canopy{position:fixed;inset:0;z-index:90;background:rgba(6,10,13,.72);display:none;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto}
+#canopy.show{display:flex}
+.cbox{background:var(--panel);border:1px solid var(--line);border-radius:18px;max-width:900px;width:100%;padding:22px}
+.cbox .chead{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.cbox h2{font-size:19px;margin:0}
+.cbox .x{margin-left:auto;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:9px;width:34px;height:34px;cursor:pointer;font-size:18px}
+.cbox .csub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+.hist{display:flex;align-items:flex-end;gap:3px;height:200px;padding:10px 4px 0;border-bottom:1px solid var(--line)}
+.hcol{flex:1;background:linear-gradient(180deg,var(--sat),var(--brand));border-radius:3px 3px 0 0;min-height:2px;position:relative;transition:height .6s cubic-bezier(.3,.9,.3,1)}
+.hcol:hover{filter:brightness(1.25)}
+.hcol .ht{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;opacity:0}
+.hcol:hover .ht{opacity:1}
+.hax{display:flex;gap:3px;margin-top:6px}
+.histlegend{display:flex;gap:18px;flex-wrap:wrap;justify-content:center;margin-top:8px;font-size:12px;color:var(--muted)}
+.histlegend span{display:inline-flex;align-items:center;gap:6px}
+.histlegend i.sw{width:12px;height:12px;border-radius:2px}
+.histlegend i.ln{width:16px;height:3px;border-radius:2px}
+.hax div{flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--muted)}
+.cstats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+.cstat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.cstat .n{font-family:var(--mono);font-size:22px;font-weight:600;line-height:1}
+.cstat .l{font-size:11.5px;color:var(--muted);margin-top:4px}
+.benefits{margin-top:8px}
+.benefits h3{font-size:14px;margin:0 0 3px}
+.brow{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.brow:last-child{border-bottom:none}
+.brow .bl b{font-weight:600}.brow .bl .sub{color:var(--muted);font-size:11.5px}
+.brow .rate{display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11.5px}
+.brow .rate input{width:66px;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px 7px;font-family:var(--mono);font-size:12px;text-align:right}
+.brow .out{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--good);text-align:right;min-width:96px}
+.disc{margin-top:14px;background:rgba(255,177,0,.08);border:1px solid rgba(255,177,0,.25);border-radius:10px;padding:11px 13px;font-size:12px;color:var(--muted);line-height:1.5}
+.disc b{color:var(--text)}.disc a{color:var(--amber)}
+@media(max-width:820px){.cstats{grid-template-columns:1fr 1fr}.brow{grid-template-columns:1fr;gap:6px}.brow .out{text-align:left}}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-left:auto;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:5px}.legend i{width:10px;height:10px;border-radius:50%}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;position:relative;overflow:hidden;cursor:pointer;transition:.15s}
+.kpi:hover{border-color:var(--muted)}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--brand)}
+.kpi.warn::before{background:var(--amber)}.kpi.bad::before{background:var(--dead)}.kpi.ok::before{background:var(--good)}
+.kpi .n{font-family:var(--mono);font-size:30px;font-weight:600;line-height:1}
+.kpi .l{font-size:12.5px;color:var(--muted);margin-top:5px}
+.kpi .sub{font-size:11px;color:var(--muted);margin-top:3px;font-family:var(--mono)}
+.grid{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.card h2{font-size:14px;font-weight:700;margin:0 0 2px;letter-spacing:.01em}
+.card .cap{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.bars{display:flex;flex-direction:column;gap:9px}
+.bar{display:grid;grid-template-columns:135px 1fr 44px;align-items:center;gap:10px;font-size:13px}
+.bar.click{cursor:pointer}.bar.click:hover .lab{color:#fff}
+.bar .lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .track{height:14px;background:var(--panel2);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;border-radius:7px;transition:width .8s cubic-bezier(.3,.9,.3,1)}
+.bar .val{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.bar.wide{grid-template-columns:108px 1fr 96px}
+.concern{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}
+.concern:last-child{border-bottom:none}.concern:hover{background:rgba(255,255,255,.02)}
+.concern .sp{width:5px;height:26px;border-radius:3px;flex:none}
+.concern .who{flex:1;min-width:0}
+.concern .who .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.concern .who .m{font-size:11.5px;color:var(--muted)}
+.concern .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:6px;flex:none}
+.tag.rem{background:rgba(208,64,43,.16);color:var(--dead)}.tag.pri{background:rgba(232,134,43,.16);color:var(--dec)}
+.concerncount{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+.concernscroll{max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-right:-6px;padding-right:6px}
+.spselect{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.spselect label{font-size:13px;color:var(--muted)}
+.spselect select{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:8px 11px;border-radius:9px;max-width:60%}
+.spselect input{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-size:13.5px;font-weight:600;padding:8px 34px 8px 11px;border-radius:9px;width:100%}
+.spselect .spclear{background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-family:var(--sans);font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:9px;cursor:pointer}
+.combo{position:relative;flex:1;min-width:240px;max-width:380px}
+.combobtn{position:absolute;right:1px;top:1px;bottom:1px;width:30px;background:transparent;border:none;color:var(--muted);font-size:12px;cursor:pointer;border-radius:0 9px 9px 0}
+.combomenu{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:60;display:none;box-shadow:0 10px 28px rgba(0,0,0,.5)}
+.combomenu.show{display:block}
+.combomenu .ci{padding:10px 12px;font-size:13.5px;cursor:pointer;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:10px;align-items:center}
+.combomenu .ci:last-child{border-bottom:none}
+.combomenu .ci:hover{background:var(--panel2)}
+.combomenu .ci .cn{color:var(--muted);font-family:var(--mono);font-size:12px;white-space:nowrap}
+.combomenu .ci.allrow{color:var(--amber);font-weight:600}
+.scopebar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:rgba(255,177,0,.1);border:1px solid rgba(255,177,0,.3);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13.5px}
+.lyrtoggle{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12.5px;color:var(--muted)}
+.lyrtoggle label{display:inline-flex;align-items:center;gap:5px;color:var(--text);cursor:pointer}
+.lyrtoggle input{margin:0}
+.condnote{font-size:11px;color:var(--muted);margin:8px 0 6px;padding-top:6px;border-top:1px dashed var(--line)}
+.copyright{margin:24px 0 12px;padding-top:14px;border-top:1px solid var(--line);text-align:center;font-size:11.5px;color:var(--muted);line-height:1.5}
+.gridpanel{position:fixed;left:14px;bottom:14px;z-index:70;width:290px;max-width:calc(100vw - 28px);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 15px;box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.gphd{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.gphd b{font-size:14px}
+.gphd span{font-size:11px;color:var(--muted);flex:1}
+.gphd button{background:transparent;border:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:0 2px}
+.gpsub{font-size:12px;color:var(--muted);margin-bottom:8px}
+.gpmetrics{display:flex;gap:5px;margin-bottom:10px}
+.gpm{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-family:var(--sans);font-weight:600;font-size:11px;padding:7px 4px;border-radius:8px;cursor:pointer}
+.gpm.on{border-color:var(--brand);color:var(--text);background:rgba(120,200,120,.12)}
+.gplegend{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:10px}
+.gpramp{flex:1;height:10px;border-radius:5px;background:linear-gradient(90deg,rgb(200,60,48),rgb(228,170,45),rgb(52,150,72))}
+.gpsum{border-top:1px solid var(--line);padding-top:8px;margin-bottom:8px}
+.gprow{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);padding:2px 0}
+.gprow b{color:var(--text)}
+.gpassume{font-size:10.5px;color:var(--muted);line-height:1.45;border-top:1px solid var(--line);padding-top:8px}
+.scopebar b{color:var(--amber)}
+.scopebar button{margin-left:auto;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:12.5px;padding:7px 13px;border-radius:9px;cursor:pointer}
+.pest{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(208,64,43,.10),transparent);border:1px solid rgba(208,64,43,.25);border-radius:12px;padding:14px 16px}
+.pest .big{font-family:var(--mono);font-size:34px;font-weight:600;color:var(--dead);line-height:1}
+.pest .tx{font-size:13px;color:var(--muted)}.pest .tx b{color:var(--text);font-weight:600}
+.rulerow{margin-bottom:14px}
+.rulerow .top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
+.rulerow .top .pctn{font-family:var(--mono)}
+.rulerow .track{height:16px;background:var(--panel2);border-radius:8px;overflow:hidden;position:relative}
+.rulerow .fill{height:100%;border-radius:8px}
+.rulerow .thresh{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text);opacity:.55}
+.rulerow .msg{font-size:11.5px;color:var(--muted);margin-top:5px}
+.rulerow .msg.bad{color:var(--dec)}
+.full{grid-column:1/-1}
+.loading{color:var(--muted);font-size:13px;font-family:var(--mono)}
+.foot{margin-top:22px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.6}
+@media(max-width:820px){.kpis{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.bar{grid-template-columns:110px 1fr 40px}.bar.wide{grid-template-columns:88px 1fr 88px}.legend{margin-left:0}#map{height:360px}}
+#gate{position:fixed;inset:0;z-index:100;background:radial-gradient(1000px 500px at 70% -10%,rgba(44,122,84,.18),transparent),var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center}
+#gate.hidden{display:none}
+.idov{position:fixed;inset:0;z-index:4000;background:rgba(6,9,12,.72);display:flex;align-items:center;justify-content:center;padding:20px}
+.idov.hidden{display:none}
+.idbox{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.idh{font-size:20px;font-weight:700;color:var(--text)}
+.idsub{font-size:13px;color:var(--muted);margin:6px 0 14px}
+.idbox input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-size:16px;font-weight:600;padding:12px;border-radius:10px}
+.idquick{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px}
+.idquick button{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:700;font-size:13px;padding:8px 14px;border-radius:20px;cursor:pointer}
+.idgo{width:100%;margin-top:14px;background:var(--brand);color:#fff;border:none;border-radius:10px;font-family:var(--sans);font-weight:700;font-size:15px;padding:12px;cursor:pointer}
+.revchip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-family:var(--sans);font-weight:600;font-size:12.5px;padding:7px 12px;border-radius:20px;cursor:pointer}
+.recrow{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.rechd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.rechd span{display:flex;gap:6px}
+.recmini{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer}
+.recmini2{padding:6px 12px;font-size:12px;width:auto;margin-top:0}
+.recdiff{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;color:var(--muted);padding:2px 0}
+.recdiff b{color:var(--text)}
+.recdone{color:var(--good);font-weight:600;font-size:13px}
+.advrow{display:flex;gap:6px;align-items:center;margin-bottom:8px}
+.advrow select,.advrow input{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-size:13px;padding:7px 8px;border-radius:8px}
+.advrow .advfield{flex:1.4;min-width:0}
+.advrow .advop{flex:1;min-width:0}
+.advrow .advval{flex:1.2;min-width:0;display:flex}
+.advrow .advval select,.advrow .advval input{width:100%}
+.advcombo{position:relative;width:100%}
+.advcombo input{width:100%}
+.advmenu{display:none;position:absolute;top:calc(100% + 3px);left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;max-height:200px;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:80;box-shadow:0 8px 22px rgba(0,0,0,.5)}
+.advmenu.show{display:block}
+.advmenu .ci{padding:8px 10px;font-size:13px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--line)}
+.advmenu .ci:last-child{border-bottom:none}
+.advmenu .ci:hover{background:var(--panel2)}
+.advrow .advdel{background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 4px;line-height:1}
+.advrow .advdel:hover{color:var(--dead)}
+#gate .mk{width:56px;height:56px;border-radius:15px}
+#gate h1{font-size:24px}#gate p{color:var(--muted);font-size:14px;max-width:320px;margin:0;line-height:1.5}
+#gate button{margin-top:4px;background:var(--brand);color:#fff;border:none;border-radius:13px;font-family:var(--sans);font-weight:700;font-size:16px;padding:14px 26px;cursor:pointer}
+#gate .err{color:var(--dead);font-size:13px;max-width:340px}
+.esri-popup__main-container{background:var(--panel)!important}
+.popbody{margin-top:4px;font-size:13px;color:var(--text)}
+.pop-date{font-size:12.5px;color:var(--muted);margin:2px 0 8px}
+.pop-date b{color:var(--text)}
+.pop-h{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:12px 0 5px}
+.pop-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.pop-tbl td{padding:3px 6px 3px 0;vertical-align:top;border-bottom:1px solid var(--line)}
+.pop-tbl td:first-child{color:var(--muted);white-space:nowrap;width:42%}
+.pop-muted{color:var(--muted);font-size:12px}
+.pop-log{border:1px solid var(--line);border-radius:8px;margin-bottom:6px;overflow:hidden}
+.pop-log-hd{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 10px;cursor:pointer;background:var(--panel2)}
+.pop-log-hd .pl-act{font-weight:600}
+.pop-log-hd .pl-meta{color:var(--muted);font-size:11.5px;font-family:var(--mono);white-space:nowrap}
+.pop-log-det{display:none;padding:6px 10px 8px}
+.pop-note{font-size:13px;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-word}
+.pl-note{font-size:12.5px;color:var(--text);padding:6px 10px 0;white-space:pre-wrap;word-break:break-word}
+.pop-log.open .pop-log-det{display:block}
+.pop-log.open .pl-meta{color:var(--amber)}
+.pop-maint{font-size:12.5px;color:var(--text)}
+.pop-done{display:block;width:100%;margin-top:8px;background:var(--brand);color:#fff;border:none;border-radius:9px;font-family:var(--sans);font-weight:700;font-size:13.5px;padding:10px;cursor:pointer}
+.pop-done:disabled{opacity:.7;cursor:default}
+.pop-done.done{background:var(--good)}
+.pop-edit{display:block;width:100%;margin-top:8px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:9px;font-family:var(--sans);font-weight:600;font-size:13px;padding:9px;cursor:pointer}
+.pop-edit.ghost{background:transparent}
+.pop-editform{margin-top:8px}
+.edwarn{font-size:11.5px;color:var(--dec);background:rgba(232,134,43,.1);border:1px solid rgba(232,134,43,.3);border-radius:8px;padding:8px 10px;margin-bottom:8px}
+.edl{display:block;font-size:11.5px;color:var(--muted);margin-bottom:8px}
+.edhint{font-size:11px;color:var(--muted);margin:-4px 0 8px}
+.taxomenu{display:none;margin-top:4px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.taxomenu.show{display:block}
+.taxomenu .ci{padding:9px 11px;font-size:13.5px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--line)}
+.taxomenu .ci:last-child{border-bottom:none}
+.taxomenu .ci:hover{background:var(--panel)}
+.edl select,.edl input{display:block;width:100%;margin-top:3px;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-size:13.5px;padding:8px;border-radius:8px}
+.edcheck{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text);margin:4px 0 10px;line-height:1.35}
+.edcheck input{margin-top:2px}
+.edbtns{display:flex;gap:8px}
+.edbtns .pop-edit,.edbtns .pop-done{margin-top:0}
+</style>
+</head>
+<body>
+<div id="gate" class="hidden">
+  
+  <h1>Town of Aurora <span style="color:var(--muted);font-weight:600">— Tree Inventory Dashboard</span></h1>
+  <p>Sign in with your ArcGIS account to load the live tree inventory dashboard.</p>
+  <button id="signInBtn">Sign in with ArcGIS</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div id="gridPanel" class="gridpanel" style="display:none">
+  <div class="gphd"><b>Canopy &amp; benefits projection</b><span>10-year estimate</span><button onclick="clearGridProjection()">&times;</button></div>
+  <div id="gpStatus" class="gpsub">Calculating&hellip;</div>
+  <div class="gpmetrics">
+    <button class="gpm on" id="gpm_now" onclick="setGridMetric('now')">Canopy % now</button>
+    <button class="gpm" id="gpm_fut" onclick="setGridMetric('fut')">Canopy % in 10 yrs</button>
+    <button class="gpm" id="gpm_count" onclick="setGridMetric('count')">Tree count</button>
+  </div>
+  <div id="gpLegend" class="gplegend"></div>
+  <div id="gpSummary" class="gpsum"></div>
+  <div class="gpassume">Assumptions: every tree gains <b>0.8&nbsp;cm DBH/year</b> (8&nbsp;cm over 10&nbsp;yrs); no removals or mortality; crown&nbsp;=&nbsp;1.68&nbsp;+&nbsp;0.202&times;DBH&nbsp;(m); canopy&nbsp;=&nbsp;&pi;&times;(crown&nbsp;radius)&sup2;. Canopy % is canopy area &divide; grid area. Reflects the current filter/area scope.</div>
+</div>
+<div id="advPanel" class="idov hidden">
+  <div class="idbox" style="max-width:640px">
+    <div style="display:flex;align-items:center;gap:10px"><div class="idh" style="flex:1">Advanced filter</div><button class="revchip" onclick="closeAdv()">Close</button></div>
+    <div class="idsub">Build a query on any attribute, or a combination. Match <select id="advMatch" onchange="advPreview()" style="background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:3px 6px;font-family:var(--sans)"><option value="AND">all</option><option value="OR">any</option></select> of the conditions.</div>
+    <div id="advConds"></div>
+    <button class="recmini" style="margin:4px 0 10px" onclick="addAdvCond()">+ Add condition</button>
+    <div id="advPreview" style="font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:12px;word-break:break-word;min-height:18px"></div>
+    <div class="edbtns"><button class="pop-edit ghost" onclick="clearAdv()">Clear filter</button><button class="pop-done" onclick="applyAdv()">Apply filter</button></div>
+  </div>
+</div>
+<div id="reconcilePanel" class="idov hidden">
+  <div class="idbox" style="max-width:620px">
+    <div style="display:flex;align-items:center;gap:10px"><div class="idh" style="flex:1">Reconcile inspections</div><button class="revchip" onclick="closeReconcile()">Close</button></div>
+    <div class="idsub">Two checks against the inspection table:<br>&bull; <b>Field mismatches</b> \u2014 trees corrected after their last inspection (copies the tree value into the inspection snapshot).<br>&bull; <b>Inspector name</b> \u2014 back-fills the tree layer&rsquo;s inspector from the latest inspection (for records collected in Field Maps that never captured it).</div>
+    <div id="recStatus" class="idsub" style="margin-bottom:8px"></div>
+    <div id="recBar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="idgo" style="margin-top:0" id="recScan" onclick="runReconcile()">Scan field mismatches</button><button class="idgo" style="margin-top:0" id="recScanName" onclick="runInspectorScan()">Scan inspector names</button><button class="pop-done" id="recAll" style="display:none" onclick="reconcileAll()">Reconcile all</button></div>
+    <div id="recList" style="max-height:52vh;overflow-y:auto"></div>
+  </div>
+</div>
+<div id="idOverlay" class="idov hidden">
+  <div class="idbox">
+    <div class="idh">Who&rsquo;s reviewing today?</div>
+    <div class="idsub">Your name is recorded as the person who signs off on any maintenance you mark complete.</div>
+    <input id="idName" placeholder="Your name" autocomplete="off" onkeydown="if(event.key==='Enter')saveReviewer()">
+    <div class="idquick" id="idQuick"></div>
+    <button class="idgo" onclick="saveReviewer()">Continue</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <header>
+    
+    <div><div class="eyebrow">Town of Aurora · Urban forestry</div>
+      <h1>Tree Inventory Dashboard<span class="live"><span class="d"></span><span id="liveLbl">connecting…</span></span></h1></div>
+    <button id="reviewerChip" class="revchip" onclick="showIdentity()" title="Change reviewer">Reviewer: &mdash;</button>
+    <button id="reconcileBtn" class="revchip" style="display:none;border-color:rgba(232,134,43,.5);color:var(--dec)" onclick="openReconcile()">&#9881; Reconcile inspections</button>
+    <button id="refresh" onclick="loadAll()">&#8635; Refresh</button>
+  </header>
+
+  <div class="mapcard">
+    <div class="datebar">
+      <span class="dblab">Last assessed:</span>
+      <button class="dbp on" id="dp_all" onclick="presetDate('all')">All dates</button>
+      <button class="dbp" id="dp_1" onclick="presetDate('1')">Last 12 mo</button>
+      <button class="dbp" id="dp_2" onclick="presetDate('2')">Last 2 yr</button>
+      <button class="dbp" id="dp_5" onclick="presetDate('5')">Last 5 yr</button>
+      <button class="dbp" id="dp_stale" onclick="presetDate('stale')">Not seen 5+ yr</button>
+      <span class="dbcustom">from <input type="date" id="dFrom" onchange="applyDates()"> to <input type="date" id="dTo" onchange="applyDates()"></span>
+    </div>
+    <div class="spselect"><label for="spInput">Species scope:</label>
+      <div class="combo">
+        <input id="spInput" placeholder="Type or pick a species&hellip; (blank = whole inventory)" autocomplete="off" oninput="onSpInput()" onfocus="openSpMenu()" onchange="onSpeciesSelect()">
+        <button type="button" class="combobtn" onclick="toggleSpMenu()" aria-label="Show species list">&#9662;</button>
+        <div id="spMenu" class="combomenu"></div>
+      </div>
+      <button class="spclear" onclick="clearSpecies()">Clear</button></div>
+    <div class="spselect"><label for="pkInput">Park:</label>
+      <div class="combo">
+        <input id="pkInput" placeholder="Type or pick a park&hellip; (blank = all)" autocomplete="off" oninput="onPkInput()" onfocus="openPkMenu()" onchange="onParkSelect()">
+        <button type="button" class="combobtn" onclick="togglePkMenu()" aria-label="Show park list">&#9662;</button>
+        <div id="pkMenu" class="combomenu"></div>
+      </div>
+      <button class="spclear" onclick="clearPark()">Clear</button></div>
+    <div class="spselect"><label for="adInput">Address:</label>
+      <div class="combo">
+        <input id="adInput" placeholder="Type an address to find its trees" autocomplete="off" oninput="onAdInput()">
+        <div id="adMenu" class="combomenu"></div>
+      </div>
+      <button class="spclear" onclick="searchAddress()">Search</button></div>
+    <div class="spselect" style="margin-bottom:6px"><button class="spclear" style="border-color:var(--brand);color:var(--text)" onclick="openAdv()">&#9881; Advanced filter (any attributes)</button><button class="spclear" id="areaBtn" style="border-color:var(--brand);color:var(--text)" onclick="startAreaSelect()">&#9649; Draw area to select</button><button class="spclear" id="areaClear" style="display:none" onclick="clearAreaSelect()">Clear area</button><button class="spclear" style="border-color:var(--brand);color:var(--text)" onclick="openGridProjection()">&#9638; Grid canopy &amp; projection</button><span id="advActive" style="font-size:12px;color:var(--amber)"></span></div>
+    <div class="lyrtoggle"><span>Map layers:</span>
+      <label><input type="checkbox" id="lyrParcels" checked onchange="toggleRefLayer('parcels',this.checked)"> Parcels</label>
+      <label><input type="checkbox" id="lyrRoads" checked onchange="toggleRefLayer('roads',this.checked)"> Roads</label>
+      <label><input type="checkbox" id="lyrGrid" checked onchange="toggleRefLayer('grid',this.checked)"> Grid</label>
+      <label title="Groups nearby trees when zoomed out — much lighter on phones"><input type="checkbox" id="lyrCluster" onchange="toggleCluster(this.checked)"> Cluster trees (lighter)</label>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div id="map"></div>
+    <div class="mapfoot">
+      <div class="showing">Showing <b id="showN">&mdash;</b> <span id="showLbl">trees</span></div>
+      <button class="dl" id="dlBtn" onclick="downloadCSV()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download work list (CSV)</button>
+      <button class="dl ghost" onclick="openCanopy()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Diameter &amp; benefits</button>
+      <button class="dl ghost" id="xlsxBtn" onclick="downloadXLSX()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4zM4 9h16M9 4v16" stroke="currentColor" stroke-width="1.8"/></svg>Excel report (all sheets)</button>
+      <div class="legend" id="legend"></div>
+    </div>
+  </div>
+
+  <div id="scopeBar" class="scopebar" style="display:none"></div>
+  <div class="kpis" id="kpis">
+    <div class="kpi" onclick="applyFilter('all')"><div class="n" id="kTotal">&mdash;</div><div class="l">Trees inventoried</div><div class="sub">tap to show all</div></div>
+    <div class="kpi ok" onclick="applyFilter('healthy')"><div class="n" id="kHealthy">&mdash;</div><div class="l">Good or satisfactory</div><div class="sub" id="kHealthyN"></div></div>
+    <div class="kpi warn" onclick="filterWhere('Need action',&quot;RECOTREA LIKE '%Immediate%' OR RECOTREA LIKE '%High Priority%'&quot;)"><div class="n" id="kAction">&mdash;</div><div class="l">Need action</div><div class="sub">treatment set to immediate/high-priority</div></div>
+    <div class="kpi bad" onclick="applyFilter('dead')"><div class="n" id="kFlagged">&mdash;</div><div class="l">Dead / imminent</div><div class="sub">tap to map them</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><h2>Condition of the canopy</h2><div class="cap">Current health rating &middot; tap a bar to map it</div><div class="bars" id="condBars"><div class="loading">Loading&hellip;</div></div></div>
+    <div class="card"><h2>Treatment backlog</h2><div class="cap">Recommended action &middot; tap to map</div><div class="bars" id="treatBars"><div class="loading">Loading&hellip;</div></div></div>
+    <div class="card"><h2>Immediate concerns</h2><div class="cap">Trees flagged for immediate/high-priority <b>treatment</b>, or in critical <b>condition</b> (dead / death imminent) even if no treatment is set yet. Tap a tree to zoom to it.</div><div id="concerns"><div class="loading">Loading&hellip;</div></div></div>
+    <div class="card"><h2>Species diversity &middot; 10-20-30 rule</h2><div class="cap">Resilience against pests &amp; disease</div><div id="diversity"><div class="loading">Loading&hellip;</div></div></div>
+    <div class="card"><h2>Species composition</h2><div class="cap">Most common &middot; tap to map</div><div class="bars" id="spBars"><div class="loading">Loading&hellip;</div></div></div>
+    <div class="card"><h2>Age structure</h2><div class="cap">Trunk diameter class &middot; tap to map</div><div class="bars" id="dbhBars"><div class="loading">Loading&hellip;</div></div></div>
+    <div class="card full"><h2>Pest &amp; disease watch</h2><div class="cap">Every pest &amp; disease found in the inventory &middot; tap to map</div>
+      <div id="eabline" class="pest" style="margin-bottom:14px"><div class="big" id="eabN">&mdash;</div><div class="tx"><b id="eabTrees">&mdash; ash trees</b> show confirmed or suspected EAB. <span id="eabPct"></span> <a href="#" onclick="filterPest('__EAB__');return false" style="color:var(--amber)">Map all EAB &rarr;</a></div></div>
+      <div class="bars" id="pestBars"><div class="loading">Scanning inventory&hellip;</div></div>
+      <div class="bars" id="dayBars" style="margin-top:16px"></div></div>
+  </div>
+  <div class="foot">Live from your ArcGIS hosted service. Filters, counts, and downloads reflect the current inventory &mdash; no export step.</div>
+  <footer class="copyright">&copy; 2026 Silv-Econ Ltd. All rights reserved. Authored by Chris Gynan, R.P.F. &middot; Proprietary and confidential &mdash; not for redistribution or reuse without written permission.</footer>
+</div>
+
+<div id="canopy">
+  <div class="cbox">
+    <div class="chead"><h2>Canopy analytics</h2><button class="x" onclick="closeCanopy()">&times;</button></div>
+    <div class="csub" id="canopySub">Diameter distribution, canopy cover &amp; estimated ecosystem benefits &mdash; reflects the current date range.</div>
+    <div id="histWrap"><div class="loading">Building histogram&hellip;</div></div>
+    <div class="cstats" id="canopyStats"></div>
+    <div class="benefits">
+      <h3>Estimated annual ecosystem benefits</h3>
+      <div class="csub" style="margin-bottom:10px">Canopy area &times; a per-m&sup2; rate. Edit any rate to match your i-Tree Eco results.</div>
+      <div id="benefitRows"></div>
+      <div class="disc"><b>These are planning-level estimates, not official figures.</b> i-Tree Eco derives benefits from species-specific models tuned to local climate and air-quality data, which can&rsquo;t be reproduced exactly here. The default rates below are round placeholders &mdash; replace them with values from an i-Tree Eco run for reporting. Learn more at <a href="https://www.itreetools.org" target="_blank">itreetools.org</a>.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://js.arcgis.com/4.30/"></script>
+<script>
+const CONFIG = {
+  portalUrl:  "https://auroraarboretum.maps.arcgis.com",
+  appId:      "l7DVQSsMbBTIGasu",
+  serviceUrl: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Aurora_Tree_Inventory_Final/FeatureServer",
+  treeLayerId: 0,
+  inspTableId: 1,
+  fkField: "tree_fk2",
+  yorkImageryUrl: "https://ww2.yorkmaps.ca/arcgis/rest/services/CacheMaps/YR_Imagery2024/MapServer",
+  parcelBase: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Parcel/FeatureServer",
+  parcelLayerId: 0, parcelAddressField: "LOCATION",
+  roadsUrl: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Roads/FeatureServer/0",
+  roadsLabelField: "FULL_NAME",
+  gridUrl:  "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Map_grid/FeatureServer/0",
+  gridLabelField: "PageNumber",
+  taxonomyItemId: "72a9256564e54bd7b5915110b9a3cedf"
+};
+const HC={'Good':'--good','Satisfactory':'--sat','Potential trouble':'--pot','Declining':'--dec','Dead':'--dead','Death imminent':'--dead','Removed':'--gone','Stump':'--gone','Stump carving':'--gone'};
+const CONDORDER=['Good','Satisfactory','Potential trouble','Declining','Dead','Death imminent','Removed','Stump','Stump carving'];
+const NON_CONDITION=['Removed','Stump','Stump carving'];  // not living canopy — excluded from condition %
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const col=h=>cssv(HC[h]||'--gone');
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const q1=s=>String(s).replace(/'/g,"''");
+const pct=(n,d)=>d?Math.round(n/d*100):0;
+
+const FILTERS=[
+  {id:'all',    label:'All trees',          where:"1=1",                                                                          color:'--muted'},
+  {id:'action', label:'Immediate removals', where:"RECOTREA LIKE '%Removal-Immediate%' OR RECOTREA LIKE '%Removal - High Priority%'", color:'--dead'},
+  {id:'prune',  label:'Priority pruning',   where:"RECOTREA LIKE '%Pruning - Immediate%' OR RECOTREA LIKE '%Pruning - High Priority%'", color:'--dec'},
+  {id:'dead',   label:'Dead / dying',       where:"OVERHEAL IN ('Dead','Death imminent')",                                         color:'--dead'},
+  {id:'poor',   label:'Poor condition',     where:"OVERHEAL IN ('Potential trouble','Declining')",                                 color:'--pot'},
+  {id:'eab',    label:'EAB-affected',       where:"PESTDISEAS LIKE '%EAB%'",                                                       color:'--dead'},
+  {id:'healthy',label:'Healthy',            where:"OVERHEAL IN ('Good','Satisfactory')",                                           color:'--good'},
+  {id:'stump',  label:'Stumps',             where:"OVERHEAL IN ('Stump','Stump carving')",                                         color:'--gone'}
+];
+const DL_FIELDS=["TREENUM_NEW","COMMON","SPECIES2","FAMILY","DBH","HEIGHT","OVERHEAL","STRUDEFE","FAILPOTE","PESTDISEAS","RECOTREA","SITELOCA","ADDRESS","GRID","X","Y"];
+
+let trees, stats, insp, esriId, viewRef, currentFilter=FILTERS[0], dateWhere="1=1", esriRequest=null;
+let treeDateField='DATE', inspDateField=null;
+let inspectorField='INSPECTR';
+function pickInspectorField(fields){
+  if(!fields) return 'INSPECTR';
+  let f=fields.find(x=>x.name&&x.name.toUpperCase()==='INSPECTR');
+  if(!f) f=fields.find(x=>(x.alias||'').toLowerCase()==='inspector'||(x.name||'').toUpperCase()==='INSPECTOR');
+  if(!f) f=fields.find(x=>x.type==='string'&&/inspect/i.test((x.name||'')+' '+(x.alias||''))&&!/date/i.test((x.name||'')+(x.alias||'')));
+  return f?f.name:'INSPECTR';
+}
+let taxoLayer=null, taxoMap={}, taxoList=[];
+let gridRefLayer=null, parcelRefLayer=null, roadsRefLayer=null;
+let _GraphicsLayer=null, _SketchVM=null, sketchLayer=null, sketchVM=null, _selGeom=null;
+let _geomEngine=null, gridStatsLayer=null, gridLabelLayer=null, _gridStats=null, _gridMetric='now', _gridRender=null, _gridZoomWatch=null;
+function pickFieldName(fields, want){
+  if(!fields) return want;
+  let f=fields.find(x=>x.name && x.name.toUpperCase()===want.toUpperCase());
+  if(!f) f=fields.find(x=>x.alias && x.alias.toUpperCase()===want.toUpperCase());
+  return f?f.name:want;
+}
+function pickDateTypeField(fields){
+  if(!fields) return null;
+  const skip=/(creation|edit|created|last_edit)/i;
+  const f=fields.find(x=>x.type==='date' && !skip.test(x.name||'') && !skip.test(x.alias||''));
+  return f?f.name:null;
+}
+const DATE_FIELD="DATE";  // alias; the real queryable name is discovered into treeDateField
+function dateField(){ return treeDateField || DATE_FIELD; }
+function dlit(ds){ return "TIMESTAMP '"+ds+" 00:00:00'"; }
+function AND(a,b){ if(!a||a==="1=1")return b||"1=1"; if(!b||b==="1=1")return a; return "("+a+") AND ("+b+")"; }
+
+require(["esri/identity/OAuthInfo","esri/identity/IdentityManager","esri/layers/FeatureLayer",
+  "esri/Map","esri/views/MapView","esri/renderers/UniqueValueRenderer","esri/symbols/SimpleMarkerSymbol",
+  "esri/layers/TileLayer","esri/Basemap","esri/request","esri/layers/GraphicsLayer","esri/widgets/Sketch/SketchViewModel","esri/geometry/geometryEngine"],
+function(OAuthInfo,IdentityManager,FeatureLayer,Map,MapView,UniqueValueRenderer,SimpleMarkerSymbol,TileLayer,Basemap,esriRequestMod,GraphicsLayer,SketchViewModel,geometryEngine){
+  esriId=IdentityManager; esriRequest=esriRequestMod; _GraphicsLayer=GraphicsLayer; _SketchVM=SketchViewModel; _geomEngine=geometryEngine;
+  const info=new OAuthInfo({appId:CONFIG.appId, portalUrl:CONFIG.portalUrl, popup:false});
+  esriId.registerOAuthInfos([info]);
+  document.getElementById('signInBtn').onclick=()=>esriId.getCredential(CONFIG.portalUrl+"/sharing").catch(e=>document.getElementById('gateErr').textContent="Sign-in failed: "+(e&&e.message||e));
+  esriId.checkSignInStatus(CONFIG.portalUrl+"/sharing").then(c=>{ window._user=(c&&c.userId)||''; go(); }).catch(()=>document.getElementById('gate').classList.remove('hidden'));
+
+  function go(){
+    document.getElementById('gate').classList.add('hidden');
+    let stored=''; try{ stored=sessionStorage.getItem('auroraReviewer')||''; }catch(e){}
+    if(stored){ reviewerName=stored; updateReviewerChip(); } else { showIdentity(); }
+    const sym=c=>new SimpleMarkerSymbol({color:c,size:7,outline:{color:"#fff",width:1}});
+    const normExpr = "var v = Lower(Trim($feature.OVERHEAL));"
+      + "if(v=='good') return 'Good';"
+      + "if(v=='satisfactory') return 'Satisfactory';"
+      + "if(v=='potential trouble') return 'Potential trouble';"
+      + "if(v=='declining') return 'Declining';"
+      + "if(v=='dead') return 'Dead';"
+      + "if(v=='death imminent') return 'Death imminent';"
+      + "if(v=='removed') return 'Removed';"
+      + "if(v=='stump') return 'Stump';"
+      + "if(v=='stump carving') return 'Stump carving';"
+      + "return $feature.OVERHEAL;";
+    const renderer=new UniqueValueRenderer({valueExpression:normExpr,defaultSymbol:sym("#7A868E"),defaultLabel:"Other"});
+    Object.keys(HC).forEach(v=>renderer.addUniqueValueInfo({value:v,symbol:sym(cssv(HC[v]))}));
+    const pt={title:"{COMMON}", lastEditInfoEnabled:false, content:[{type:"custom", outFields:["*"], creator:photoCreator}]};
+    // keep the map layer light for mobile memory: only fields needed to draw + title + popup lookup.
+    // (the popup re-queries the full record on tap, so we don't need every attribute in memory for 30k points)
+    trees=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["OBJECTID","GlobalID","COMMON","OVERHEAL"], renderer:renderer, popupTemplate:pt});
+    stats=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId});
+    insp =new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.inspTableId});
+    try{ taxoLayer=new FeatureLayer({portalItem:{id:CONFIG.taxonomyItemId}}); }catch(e){ taxoLayer=null; }
+
+    let basemap="satellite";
+    if(CONFIG.yorkImageryUrl){ try{ basemap=new Basemap({baseLayers:[new TileLayer({url:CONFIG.yorkImageryUrl})],title:"York 2024"}); }catch(e){} }
+    // reference layers (match the field app): grid page numbers, parcel fabric, roads
+    const refLayers=[]; gridRefLayer=null;
+    if(CONFIG.gridUrl){ gridRefLayer=new FeatureLayer({url:CONFIG.gridUrl, minScale:0, maxScale:12000,
+      renderer:{type:"simple", symbol:{type:"simple-fill", color:[0,0,0,0], outline:{color:[130,180,255,0.7], width:1}}},
+      labelingInfo:[{symbol:{type:"text", color:"#A9C8FF", haloColor:"#0F151A", haloSize:1.4, font:{size:14,weight:"bold"}}, labelPlacement:"always-horizontal", labelExpressionInfo:{expression:"$feature."+CONFIG.gridLabelField}}]}); refLayers.push(gridRefLayer); }
+    if(CONFIG.parcelBase){ parcelRefLayer=new FeatureLayer({url:CONFIG.parcelBase+"/"+CONFIG.parcelLayerId, outFields:[CONFIG.parcelAddressField], minScale:6000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-fill", color:[0,0,0,0], outline:{color:[255,255,255,0.5], width:0.7}}},
+      labelingInfo:[{minScale:2000, maxScale:0, symbol:{type:"text", color:"#E8EEF1", haloColor:"#0F151A", haloSize:1.2, font:{size:9}}, labelPlacement:"always-horizontal", labelExpressionInfo:{expression:"$feature."+CONFIG.parcelAddressField}}]}); refLayers.push(parcelRefLayer); }
+    if(CONFIG.roadsUrl){ roadsRefLayer=new FeatureLayer({url:CONFIG.roadsUrl, minScale:20000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-line", color:[255,224,130,0.55], width:1}},
+      labelingInfo:[{symbol:{type:"text", color:"#FFE082", haloColor:"#0F151A", haloSize:1.2, font:{size:9,weight:"bold"}}, labelPlacement:"center-along", labelExpressionInfo:{expression:"$feature."+CONFIG.roadsLabelField}}]}); refLayers.push(roadsRefLayer); }
+    const map=new Map({basemap:basemap, layers:refLayers.concat([trees])});
+    viewRef=new MapView({container:"map", map:map, center:[-79.4566,44.0065], zoom:13, ui:{components:["zoom"]}, constraints:{rotationEnabled:false}});
+    try{
+      gridStatsLayer=new _GraphicsLayer({listMode:"hide"}); map.add(gridStatsLayer);
+      gridLabelLayer=new _GraphicsLayer({listMode:"hide"}); map.add(gridLabelLayer);
+      sketchLayer=new _GraphicsLayer({listMode:"hide"}); map.add(sketchLayer);
+      sketchVM=new _SketchVM({view:viewRef, layer:sketchLayer,
+        polygonSymbol:{type:"simple-fill", color:[255,196,0,0.10], outline:{color:[255,196,0,0.95], width:2}}});
+      sketchVM.on("create", function(ev){ if(ev.state==="complete"){ _selGeom=ev.graphic&&ev.graphic.geometry; applySpatial(); } });
+    }catch(e){ sketchVM=null; }
+
+    document.getElementById('legend').innerHTML=['Good','Satisfactory','Potential trouble','Declining','Dead']
+      .map(k=>'<span><i style="background:'+col(k)+'"></i>'+k+'</span>').join('');
+    document.getElementById('chips').innerHTML=FILTERS.map(f=>'<div class="chip" id="chip_'+f.id+'" onclick="applyFilter(\''+f.id+'\')"><span class="dot" style="background:'+cssv(f.color)+'"></span>'+f.label+'</div>').join('');
+
+    Promise.all([trees.load(),stats.load(),insp.load()]).then(function(){
+      treeDateField=pickFieldName(trees.fields,'DATE');
+      inspectorField=pickInspectorField(trees.fields);
+      inspDateField=pickFieldName(insp.fields,'DATE'); if(!inspDateField||inspDateField==='DATE'){ const dt=pickDateTypeField(insp.fields); if(dt) inspDateField=dt; }
+      loadSpeciesList(); loadParkList(); loadTaxonomy(); applyFilter('all');
+      if(gridRefLayer){ gridRefLayer.when(()=>{ if(gridRefLayer.fullExtent) viewRef.goTo(gridRefLayer.fullExtent).catch(()=>{}); }).catch(()=>{}); }
+    });
+  }
+});
+
+function photoCreator(event){
+  const g=event.graphic; const a=g.attributes; const oid=a[trees.objectIdField];
+  const wrap=document.createElement('div'); wrap.className='popbody';
+  const dateLine=document.createElement('div'); dateLine.className='pop-date'; wrap.appendChild(dateLine);
+  const detBox=document.createElement('div'); wrap.appendChild(detBox);
+  const condBox=document.createElement('div'); wrap.appendChild(condBox);
+  const commentsBox=document.createElement('div'); wrap.appendChild(commentsBox);
+  const maintBox=document.createElement('div'); wrap.appendChild(maintBox);
+  maintBox.addEventListener('click', function(e){ const b=e.target.closest('.pop-done'); if(!b||b.disabled)return; markMaintenanceDone(b.getAttribute('data-oid'), b.getAttribute('data-gid'), b.getAttribute('data-rec'), b); });
+  const editWrap=document.createElement('div'); wrap.appendChild(editWrap);
+  let curRec=a;
+  editWrap.addEventListener('click', function(e){
+    const ci=e.target.closest('#ed_COMMON_menu .ci[data-tv]'); if(ci){ pickTaxo(ci.getAttribute('data-tv')); return; }
+    const t=e.target.closest('[data-act]'); if(!t)return;
+    const act=t.getAttribute('data-act');
+    const box=document.getElementById('editFormBox'); const eb=editWrap.querySelector('[data-act="edit"]');
+    if(act==='edit'){ if(box)box.style.display='block'; if(eb)eb.style.display='none'; }
+    else if(act==='cancel'){ if(box)box.style.display='none'; if(eb)eb.style.display=''; }
+    else if(act==='save'){ saveTreeCorrection(oid, curRec.GlobalID||a.GlobalID, t); }
+  });
+  function renderEdit(o){ curRec=o;
+    editWrap.innerHTML='<button class="pop-edit" data-act="edit">\u270E Correct a field (fix a data-entry error)</button>'
+      +'<div id="editFormBox" class="pop-editform" style="display:none">'+editFormHTML(o)+'</div>';
+  }
+  const workBox=document.createElement('div'); wrap.appendChild(workBox);
+  workBox.addEventListener('click', function(e){
+    const t=e.target.closest('[data-act]'); if(!t)return;
+    const act=t.getAttribute('data-act'); const box=document.getElementById('woFormBox'); const wb=workBox.querySelector('[data-act="wo-edit"]');
+    if(act==='wo-edit'){ if(box)box.style.display='block'; if(wb)wb.style.display='none'; }
+    else if(act==='wo-cancel'){ if(box)box.style.display='none'; if(wb)wb.style.display=''; }
+    else if(act==='wo-save'){ saveWorkOrder(oid, curRec.GlobalID||a.GlobalID, t); }
+  });
+  function renderWork(o){ workBox.innerHTML='<button class="pop-edit" data-act="wo-edit">\u2795 Assign / change work order</button><div id="woFormBox" class="pop-editform" style="display:none">'+workOrderFormHTML(o)+'</div>'; }
+  const logsBox=document.createElement('div'); wrap.appendChild(logsBox);
+  const photoBox=document.createElement('div'); wrap.appendChild(photoBox);
+  const fmtD=v=>{ if(v==null||v==='')return null; const d=new Date(v); return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10); };
+  const findDate=o=>{ if(o[treeDateField]!=null&&o[treeDateField]!=='')return o[treeDateField]; if(o.DATE!=null&&o.DATE!=='')return o.DATE; for(const k in o){ if(k.toLowerCase()==='date'&&o[k]!=null&&o[k]!=='')return o[k]; } return null; };
+  const logDate=R=>{ if(inspDateField&&R[inspDateField]!=null&&R[inspDateField]!=='')return R[inspDateField]; const c=[R.inspection_date,R.ACTIVITY_DATE,R.DATE]; for(const v of c){ if(v!=null&&v!=='')return v; } return null; };
+  const tbl=rows=>{ let h='<table class="pop-tbl">'; rows.forEach(r=>{ if(r[1]!=null&&r[1]!=='') h+='<tr><td>'+r[0]+'</td><td>'+esc(r[1])+'</td></tr>'; }); return h+'</table>'; };
+  function renderCond(o){
+    const ds=fmtD(findDate(o));
+    dateLine.innerHTML = ds ? 'Last inspected: <b>'+ds+'</b>' : '';
+    detBox.innerHTML='<div class="pop-h">Details</div>'+tbl([
+      ['Tree #',o.TREENUM_NEW],['Species',o.SPECIES2],['Common name',o.COMMON],['DBH (cm)',o.DBH],['Height (m)',o.HEIGHT],
+      ['Crown diameter (m)',o.CROWNDIAM],['Age class',o.AGECLASS],['Site',o.SITELOCA],['Address',o.ADDRESS],['Park',o.PARKNAM]]);
+    condBox.innerHTML='<div class="pop-h">Condition &amp; defects</div>'+tbl([
+      ['Overall health',o.OVERHEAL],['Structural',o.STRUDEFE],['Wound / canker',o.WOUNCANK],
+      ['Dead / decay',o.DEADDECAY],['Failure potential',o.FAILPOTE],['Pest / disease',o.PESTDISEAS],
+      ['Impediment',o.IMPEDMNT],['Recommended',o.RECOTREA]]);
+    const cm=(o.COMMENTS==null?'':String(o.COMMENTS).trim());
+    commentsBox.innerHTML=(cm&&cm.toLowerCase()!=='none')?'<div class="pop-h">Tree comments</div><div class="pop-note">'+esc(cm)+'</div>':'';
+    const rec=(o.RECOTREA==null?'':String(o.RECOTREA));
+    const pending=/immediate|high priority|prun|removal/i.test(rec) && !/no treatment/i.test(rec);
+    maintBox.innerHTML = pending
+      ? '<div class="pop-h">Maintenance</div><div class="pop-maint">Recommended: <b>'+esc(rec)+'</b><button class="pop-done" data-oid="'+esc(oid)+'" data-gid="'+esc(o.GlobalID||'')+'" data-rec="'+esc(rec)+'">\u2713 Mark maintenance complete</button></div>'
+      : '';
+  }
+  renderCond(a); renderEdit(a); renderWork(a);
+  if(oid!=null){ trees.queryFeatures({objectIds:[oid],outFields:["*"],returnGeometry:false}).then(fr=>{
+    if(fr.features.length){ const fa=fr.features[0].attributes; renderCond(fa); renderEdit(fa); renderWork(fa); loadLogs(fa.GlobalID||a.GlobalID); loadPhotos(); }
+  }).catch(()=>{ loadLogs(a.GlobalID); loadPhotos(); }); }
+  function loadLogs(gid){
+    if(!gid){ logsBox.innerHTML=''; return; }
+    logsBox.innerHTML='<div class="pop-h">Inspection logs</div><div class="pop-muted">Loading…</div>';
+    insp.queryFeatures({where:CONFIG.fkField+" = '"+String(gid).replace(/'/g,"''")+"'", outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"]}).then(res=>{
+      if(!res.features.length){ logsBox.innerHTML='<div class="pop-h">Inspection logs</div><div class="pop-muted">No logs recorded.</div>'; return; }
+      logsBox.innerHTML='<div class="pop-h">Inspection logs ('+res.features.length+') · tap to expand</div>';
+      res.features.forEach(f=>{ const L=f.attributes;
+        const row=document.createElement('div'); row.className='pop-log';
+        const d=fmtD(logDate(L))||'';
+        const note=(L.maintenance_notes==null?'':String(L.maintenance_notes).trim());
+        const noteHtml=note?'<div class="pl-note">'+esc(note)+'</div>':'';
+        row.innerHTML='<div class="pop-log-hd"><span class="pl-act">'+esc(L.activity_type||'Activity')+'</span><span class="pl-meta">'+d+(L.inspector_name?(' · '+esc(L.inspector_name)):'')+' ▾</span></div>'+noteHtml+'<div class="pop-log-det"></div>';
+        const det=row.querySelector('.pop-log-det');
+        det.innerHTML=tbl([['Condition',L.condition_at_inspection],['Structural',L.Structdefe_at_inspection],['Wound/canker',L.Woundcank_at_inspection],['Dead/decay',L.Deaddecay_at_inspection],['Failure',L.Failpote_at_inspection],['Pest/disease',L.Pestdisease_at_inspection],['Impediment',L.Impediment_at_inspection],['DBH (cm)',L.DBH],['Species',L.Species],['Recommended',L.recommendations],['Removal reason',L.Removal_reason],['Notes',L.maintenance_notes]]);
+        row.querySelector('.pop-log-hd').addEventListener('click',()=>{ row.classList.toggle('open'); });
+        logsBox.appendChild(row);
+      });
+    }).catch(()=>{ logsBox.innerHTML='<div class="pop-h">Inspection logs</div><div class="pop-muted">Could not load.</div>'; });
+  }
+  function loadPhotos(){
+    if(oid==null) return;
+    trees.queryAttachments({objectIds:[oid]}).then(m=>{
+      const atts=(m&&m[oid])||[];
+      const imgs=atts.filter(x=>x.contentType&&x.contentType.indexOf('image')===0);
+      if(!imgs.length){ photoBox.innerHTML='<div class="pop-muted" style="margin-top:8px">No photos on this tree.</div>'; return; }
+      photoBox.innerHTML='<div class="pop-h">Photos</div>';
+      imgs.forEach(x=>{ const holder=document.createElement('div'); holder.style.marginTop='6px'; holder.innerHTML='<div class="pop-muted">loading photo…</div>';
+        esriRequest(x.url,{responseType:"blob",authMode:"auto"}).then(r=>{ const url=URL.createObjectURL(r.data); holder.innerHTML='<a href="'+url+'" target="_blank" rel="noopener"><img src="'+url+'" style="width:100%;border-radius:8px;display:block"></a>'; }).catch(()=>{ holder.innerHTML='<div class="pop-muted">(photo unavailable)</div>'; });
+        photoBox.appendChild(holder);
+      });
+    }).catch(()=>{});
+  }
+  return wrap;
+}
+function setFilter(label,where,id){
+  currentFilter={id:id||'custom',label:label,where:where};
+  const full=AND(where,dateWhere);
+  trees.definitionExpression=full;
+  trees.featureEffect = _selGeom ? {filter:{geometry:_selGeom, spatialRelationship:"intersects"}, excludedEffect:"opacity(0.05)"} : null;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  const chip=document.getElementById('chip_'+(id||''));if(chip)chip.classList.add('on');
+  document.getElementById('showLbl').textContent=(id==='all'?'trees in range':label.toLowerCase());
+  updateScope();
+  loadAll();  // re-scope every metric below the map to the current selection
+  stats.queryFeatureCount(withGeom({where:full})).then(n=>{
+    document.getElementById('showN').textContent=n.toLocaleString();
+    document.getElementById('dlBtn').disabled=!n;
+    const active = _selGeom || (id!=='all') || (dateWhere && dateWhere!=='1=1');
+    if(_selGeom){ viewRef.goTo(_selGeom.extent.expand(1.3)).catch(()=>{}); }
+    else if(active && n>0){
+      trees.queryExtent({where:full}).then(r=>{ if(r&&r.extent&&r.count) viewRef.goTo(r.extent.expand(1.3)).catch(()=>{}); }).catch(()=>{});
+    } else if(!active && gridRefLayer && gridRefLayer.fullExtent){
+      viewRef.goTo(gridRefLayer.fullExtent).catch(()=>{});
+    }
+  }).catch(()=>{});
+}
+function updateScope(){
+  const el=document.getElementById('scopeBar'); if(!el)return;
+  const parts=[];
+  if(_selGeom) parts.push('a drawn area');
+  if(currentFilter.id!=='all') parts.push('<b>'+esc(currentFilter.label)+'</b>');
+  if(!parts.length){ el.style.display='none'; return; }
+  el.style.display='flex';
+  el.innerHTML='<span>Everything below is scoped to '+parts.join(' + ')+'</span><button onclick="clearAllScope()">Show whole inventory</button>';
+}
+function applyFilter(id){ ['spInput','pkInput','adInput'].forEach(x=>{ const el=document.getElementById(x); if(el)el.value=''; }); const f=FILTERS.find(x=>x.id===id)||FILTERS[0]; setFilter(f.label,f.where,f.id); }
+function filterCond(c){ setFilter(c,"OVERHEAL = '"+q1(c)+"'"); scrollMap(); }
+function filterTreat(k){ setFilter(k,"RECOTREA = '"+q1(k)+"'"); scrollMap(); }
+function filterSpecies(k){ const s=document.getElementById('spInput'); if(s)s.value=k; setFilter(k,"COMMON = '"+q1(k)+"'",'species'); scrollMap(); }
+function onSpeciesSelect(){
+  const v=(document.getElementById('spInput').value||'').trim();
+  if(!v){ applyFilter('all'); return; }
+  const list=window._species||[];
+  const exact=list.find(x=>String(x.k).toLowerCase()===v.toLowerCase());
+  if(exact){ document.getElementById('spInput').value=exact.k; setFilter(exact.k,"COMMON = '"+q1(exact.k)+"'",'species'); }
+  else { setFilter(v,"COMMON LIKE '%"+q1(v)+"%'",'species'); }
+  scrollMap();
+}
+function clearSpecies(){ const s=document.getElementById('spInput'); if(s)s.value=''; closeSpMenu(); applyFilter('all'); }
+(function(){
+  const bind=(menuId, pick)=>{ const m=document.getElementById(menuId); if(m) m.addEventListener('click',function(e){ const it=e.target.closest('.ci'); if(!it||!it.hasAttribute('data-v'))return; pick(it.getAttribute('data-v')); }); };
+  bind('spMenu', pickSpecies); bind('pkMenu', pickPark); bind('adMenu', pickAddress);
+  document.addEventListener('click',function(e){ document.querySelectorAll('.combo').forEach(c=>{ if(!c.contains(e.target)){ const menu=c.querySelector('.combomenu'); if(menu)menu.classList.remove('show'); } }); });
+})();
+function clearOtherFinders(keep){ ['spInput','pkInput','adInput'].forEach(id=>{ if(id!==keep){ const el=document.getElementById(id); if(el)el.value=''; } }); }
+/* ---- Park finder (finite list) ---- */
+function loadParkList(){
+  stats.queryFeatures({where:"PARKNAM IS NOT NULL", groupByFieldsForStatistics:["PARKNAM"], outStatistics:[{statisticType:"count",onStatisticField:stats.objectIdField,outStatisticFieldName:"cnt"}], returnGeometry:false}).then(r=>{
+    let rows=r.features.map(f=>({k:f.attributes.PARKNAM,n:f.attributes.cnt})).filter(x=>x.k&&String(x.k).trim());
+    rows.sort((a,b)=>String(a.k).localeCompare(String(b.k)));
+    window._parks=rows;
+  }).catch(()=>{});
+}
+function renderPkMenu(q){
+  const menu=document.getElementById('pkMenu'); if(!menu)return;
+  const list=window._parks||[]; const ql=(q||'').trim().toLowerCase();
+  const rows=(ql?list.filter(x=>String(x.k).toLowerCase().indexOf(ql)>=0):list).slice(0,500);
+  let html='<div class="ci allrow" data-v="">All parks / whole inventory</div>';
+  html+=rows.map(x=>'<div class="ci" data-v="'+esc(x.k)+'"><span>'+esc(x.k)+'</span><span class="cn">'+x.n.toLocaleString()+'</span></div>').join('');
+  if(!list.length) html+='<div class="ci" style="cursor:default;color:var(--muted)">No park names in this layer</div>';
+  menu.innerHTML=html;
+}
+function openPkMenu(){ renderPkMenu(document.getElementById('pkInput').value); document.getElementById('pkMenu').classList.add('show'); }
+function closePkMenu(){ const m=document.getElementById('pkMenu'); if(m)m.classList.remove('show'); }
+function togglePkMenu(){ const m=document.getElementById('pkMenu'); if(!m)return; m.classList.contains('show')?closePkMenu():openPkMenu(); }
+function onPkInput(){ renderPkMenu(document.getElementById('pkInput').value); document.getElementById('pkMenu').classList.add('show'); }
+function pickPark(v){ closePkMenu(); const inp=document.getElementById('pkInput'); if(!v){ if(inp)inp.value=''; applyFilter('all'); return; }
+  const list=window._parks||[]; const ex=list.find(x=>String(x.k).toLowerCase()===String(v).toLowerCase()); const name=ex?ex.k:v;
+  if(inp)inp.value=name; clearOtherFinders('pkInput'); setFilter('Park: '+name, "PARKNAM = '"+q1(name)+"'", 'park'); scrollMap(); }
+function onParkSelect(){ const v=(document.getElementById('pkInput').value||'').trim(); if(!v){ applyFilter('all'); return; } pickPark(v); }
+function clearPark(){ const s=document.getElementById('pkInput'); if(s)s.value=''; closePkMenu(); applyFilter('all'); }
+/* ---- Address finder (live suggestions via distinct query) ---- */
+let _adTimer=null;
+function onAdInput(){
+  const v=(document.getElementById('adInput').value||'').trim(); const menu=document.getElementById('adMenu');
+  if(v.length<2){ if(menu)menu.classList.remove('show'); return; }
+  clearTimeout(_adTimer);
+  _adTimer=setTimeout(()=>{
+    stats.queryFeatures({where:"ADDRESS LIKE '"+q1(v)+"%'", outFields:["ADDRESS"], returnDistinctValues:true, orderByFields:["ADDRESS"], num:20, returnGeometry:false}).then(r=>{
+      const seen={}, addrs=[]; r.features.forEach(f=>{ const A=f.attributes.ADDRESS; if(A&&!seen[A]){ seen[A]=1; addrs.push(A); } });
+      menu.innerHTML=addrs.length?addrs.map(A=>'<div class="ci" data-v="'+esc(A)+'"><span>'+esc(A)+'</span></div>').join(''):'<div class="ci" style="cursor:default;color:var(--muted)">No matching addresses</div>';
+      menu.classList.add('show');
+    }).catch(()=>{});
+  },220);
+}
+function pickAddress(v){ const m=document.getElementById('adMenu'); if(m)m.classList.remove('show'); const inp=document.getElementById('adInput'); if(inp)inp.value=v; clearOtherFinders('adInput'); setFilter('Address: '+v, "ADDRESS = '"+q1(v)+"'", 'address'); scrollMap(); }
+function searchAddress(){ const v=(document.getElementById('adInput').value||'').trim(); const m=document.getElementById('adMenu'); if(m)m.classList.remove('show'); if(!v){ applyFilter('all'); return; } clearOtherFinders('adInput'); setFilter('Address: '+v, "ADDRESS LIKE '%"+q1(v)+"%'", 'address'); scrollMap(); }
+/* ---- Editing: mark recommended maintenance complete ---- */
+let reviewerName='';
+const REVIEWERS=['CG','KC','HS'];
+const ADMINS=['CG'];
+const RECON_MAP={ OVERHEAL:'condition_at_inspection', STRUDEFE:'Structdefe_at_inspection', WOUNCANK:'Woundcank_at_inspection', DEADDECAY:'Deaddecay_at_inspection', FAILPOTE:'Failpote_at_inspection', PESTDISEAS:'Pestdisease_at_inspection', IMPEDMNT:'Impediment_at_inspection', DBH:'DBH' };
+const RECON_LABEL={ OVERHEAL:'Condition', STRUDEFE:'Structural', WOUNCANK:'Wound/canker', DEADDECAY:'Dead/decay', FAILPOTE:'Failure', PESTDISEAS:'Pest/disease', IMPEDMNT:'Impediment', DBH:'DBH' };
+let _flagged=[];
+function openReconcile(){ document.getElementById('reconcilePanel').classList.remove('hidden'); }
+function closeReconcile(){ document.getElementById('reconcilePanel').classList.add('hidden'); }
+function recPresent(v){ return v!=null && String(v).trim()!=='' && String(v).trim().toLowerCase()!=='null'; }
+function recEq(field,tv,iv){ if(field==='DBH'){ const a=parseFloat(tv),b=parseFloat(iv); if(!isNaN(a)&&!isNaN(b)) return Math.abs(a-b)<0.001; } return String(tv).trim()===String(iv).trim(); }
+function recDate(A){ const c=[inspDateField?A[inspDateField]:null, A.inspection_date, A.ACTIVITY_DATE, A.DATE]; for(const v of c){ if(v!=null&&v!==''){ const t=(typeof v==='number')?v:Date.parse(v); if(!isNaN(t)) return t; } } return 0; }
+async function runReconcile(){
+  const st=document.getElementById('recStatus'), list=document.getElementById('recList'), scan=document.getElementById('recScan');
+  scan.disabled=true; list.innerHTML=''; document.getElementById('recAll').style.display='none'; _flagged=[];
+  try{
+    st.textContent='Loading inspection records\u2026';
+    const latest={}; let start=0, page=2000;
+    while(true){
+      const res=await insp.queryFeatures({where:"activity_type IN ('Inspection','Planted')", outFields:["*"], returnGeometry:false, num:page, start:start});
+      res.features.forEach(f=>{ const A=f.attributes; const gid=A[CONFIG.fkField]; if(!gid)return; const d=recDate(A); const cur=latest[gid]; if(!cur||d>=cur.date){ latest[gid]={oid:A[insp.objectIdField], date:d, A:A}; } });
+      if(res.features.length<page) break; start+=page; if(start>300000) break;
+    }
+    const gids=Object.keys(latest);
+    st.textContent='Comparing '+gids.length.toLocaleString()+' inspected trees\u2026';
+    const tfields=['GlobalID',stats.objectIdField,'TREENUM_NEW','COMMON'].concat(Object.keys(RECON_MAP));
+    for(let i=0;i<gids.length;i+=250){
+      const batch=gids.slice(i,i+250);
+      const where="GlobalID IN ('"+batch.map(g=>String(g).replace(/'/g,"''")).join("','")+"')";
+      const res=await stats.queryFeatures({where:where, outFields:tfields, returnGeometry:true, outSpatialReference:{wkid:4326}});
+      res.features.forEach(f=>{ const T=f.attributes; const L=latest[T.GlobalID]; if(!L)return; const diffs=[];
+        Object.keys(RECON_MAP).forEach(tf=>{ const tv=T[tf], iv=L.A[RECON_MAP[tf]]; if(recPresent(tv)&&recPresent(iv)&&!recEq(tf,tv,iv)){ diffs.push({field:tf, inspField:RECON_MAP[tf], tree:tv, insp:iv}); } });
+        if(diffs.length) _flagged.push({gid:T.GlobalID, treenum:T.TREENUM_NEW, common:T.COMMON, inspOid:L.oid, snapNote:L.A.maintenance_notes||'', diffs:diffs, geometry:f.geometry});
+      });
+      st.textContent='Comparing\u2026 '+Math.min(i+250,gids.length).toLocaleString()+' / '+gids.length.toLocaleString();
+    }
+    renderFlagged();
+  }catch(err){ st.textContent='Scan failed: '+(err&&err.message||err); }
+  scan.disabled=false;
+}
+function renderFlagged(){
+  const st=document.getElementById('recStatus'), list=document.getElementById('recList');
+  const ab=document.getElementById('recAll'); ab.textContent='Reconcile all'; ab.onclick=reconcileAll;
+  if(!_flagged.length){ st.textContent='No mismatches found \u2014 trees and their latest inspections agree.'; list.innerHTML=''; ab.style.display='none'; return; }
+  st.textContent=_flagged.length+' tree(s) where the record disagrees with the latest inspection.';
+  ab.style.display='';
+  list.innerHTML=_flagged.map((x,i)=>{
+    const rows=x.diffs.map(d=>'<div class="recdiff"><span>'+RECON_LABEL[d.field]+'</span><span>tree <b>'+esc(d.tree)+'</b> &ne; log <b>'+esc(d.insp)+'</b></span></div>').join('');
+    return '<div class="recrow" id="recrow_'+i+'"><div class="rechd"><b>'+esc(x.common||'Tree')+' '+(x.treenum?('#'+x.treenum):'')+'</b><span><button class="recmini" onclick="recZoom('+i+')">Show</button><button class="pop-done recmini2" onclick="reconcileOne('+i+',this)">Reconcile</button></span></div>'+rows+'</div>';
+  }).join('');
+}
+/* ---- Inspector-name backfill: copy latest inspection's inspector into the tree layer ---- */
+async function runInspectorScan(){
+  const st=document.getElementById('recStatus'), list=document.getElementById('recList'), scanA=document.getElementById('recScan'), scanB=document.getElementById('recScanName');
+  scanA.disabled=true; scanB.disabled=true; list.innerHTML=''; document.getElementById('recAll').style.display='none'; _flagged=[];
+  try{
+    st.textContent='Loading inspection records\u2026';
+    const latest={}; let start=0, page=2000;
+    while(true){
+      const res=await insp.queryFeatures({where:"inspector_name IS NOT NULL", outFields:["*"], returnGeometry:false, num:page, start:start});
+      res.features.forEach(f=>{ const A=f.attributes; const gid=A[CONFIG.fkField]; const name=A.inspector_name; if(!gid||!recPresent(name))return; const d=recDate(A); const cur=latest[gid]; if(!cur||d>=cur.date){ latest[gid]={date:d, name:name}; } });
+      if(res.features.length<page) break; start+=page; if(start>300000) break;
+    }
+    const gids=Object.keys(latest);
+    st.textContent='Comparing '+gids.length.toLocaleString()+' inspected trees\u2026';
+    for(let i=0;i<gids.length;i+=250){
+      const batch=gids.slice(i,i+250);
+      const where="GlobalID IN ('"+batch.map(g=>String(g).replace(/'/g,"''")).join("','")+"')";
+      const res=await stats.queryFeatures({where:where, outFields:['GlobalID',stats.objectIdField,'TREENUM_NEW','COMMON',inspectorField], returnGeometry:true, outSpatialReference:{wkid:4326}});
+      res.features.forEach(f=>{ const T=f.attributes; const L=latest[T.GlobalID]; if(!L)return;
+        const treeName=T[inspectorField];
+        if(String(treeName==null?'':treeName).trim()!==String(L.name).trim()){ _flagged.push({gid:T.GlobalID, oid:T[stats.objectIdField], treenum:T.TREENUM_NEW, common:T.COMMON, treeName:treeName, newName:L.name, geometry:f.geometry}); }
+      });
+      st.textContent='Comparing\u2026 '+Math.min(i+250,gids.length).toLocaleString()+' / '+gids.length.toLocaleString();
+    }
+    renderInspFlagged();
+  }catch(err){ st.textContent='Scan failed: '+(err&&err.message||err); }
+  scanA.disabled=false; scanB.disabled=false;
+}
+function renderInspFlagged(){
+  const st=document.getElementById('recStatus'), list=document.getElementById('recList'), ab=document.getElementById('recAll');
+  ab.textContent='Update all names'; ab.onclick=reconcileInspectorAll;
+  if(!_flagged.length){ st.textContent='No mismatches \u2014 every inspected tree already carries its latest inspector name.'; list.innerHTML=''; ab.style.display='none'; return; }
+  st.textContent=_flagged.length+' tree(s) whose inspector name differs from the latest inspection.';
+  ab.style.display='';
+  list.innerHTML=_flagged.map((x,i)=>'<div class="recrow" id="recrow_'+i+'"><div class="rechd"><b>'+esc(x.common||'Tree')+' '+(x.treenum?('#'+x.treenum):'')+'</b><span><button class="recmini" onclick="recZoom('+i+')">Show</button><button class="pop-done recmini2" onclick="reconcileInspectorOne('+i+',this)">Update</button></span></div><div class="recdiff"><span>Inspector</span><span>tree <b>'+esc(x.treeName||'(blank)')+'</b> &rarr; <b>'+esc(x.newName)+'</b></span></div></div>').join('');
+}
+function reconcileInspectorOne(i, btn){
+  const x=_flagged[i]; if(!x)return; if(btn){btn.disabled=true;btn.textContent='\u2026';}
+  const upd={}; upd[trees.objectIdField]=x.oid; upd[inspectorField]=x.newName;
+  return trees.applyEdits({updateFeatures:[{attributes:upd}]}).then(r=>{ const r0=r&&r.updateFeatureResults&&r.updateFeatureResults[0]; if(r0&&r0.error)throw r0.error;
+    const row=document.getElementById('recrow_'+i); if(row){row.style.opacity='.5';row.innerHTML='<div class="recdone">\u2713 '+esc(x.common||'tree')+' '+(x.treenum?('#'+x.treenum):'')+' \u2192 '+esc(x.newName)+'</div>';}
+  }).catch(err=>{ if(btn){btn.disabled=false;btn.textContent='Update';} window.alert('Could not update: '+(err&&err.message||err)); });
+}
+async function reconcileInspectorAll(){
+  const btn=document.getElementById('recAll'); btn.disabled=true; const orig=btn.textContent;
+  const updates=_flagged.map(x=>{ const u={}; u[trees.objectIdField]=x.oid; u[inspectorField]=x.newName; return {attributes:u}; });
+  try{ for(let i=0;i<updates.length;i+=200){ btn.textContent='Updating\u2026 '+Math.min(i+200,updates.length)+'/'+updates.length; await trees.applyEdits({updateFeatures:updates.slice(i,i+200)}); }
+    document.getElementById('recStatus').textContent='Updated the inspector name on '+updates.length+' tree(s).'; document.getElementById('recList').innerHTML=''; btn.style.display='none'; trees.refresh();
+  }catch(err){ btn.disabled=false; btn.textContent=orig; window.alert('Update-all failed: '+(err&&err.message||err)); }
+}
+function recZoom(i){ const x=_flagged[i]; if(x&&x.geometry){ closeReconcile(); viewRef.goTo({target:x.geometry,zoom:19}).catch(()=>{}); scrollMap(); } }
+function reconcileOne(i, btn){
+  const x=_flagged[i]; if(!x) return;
+  if(btn){ btn.disabled=true; btn.textContent='\u2026'; }
+  const iu={}; iu[insp.objectIdField]=x.inspOid;
+  x.diffs.forEach(d=>{ iu[d.inspField]=d.tree; });
+  iu.maintenance_notes=((x.snapNote||'')+' [reconciled to tree by '+reviewerName+' '+new Date().toISOString().slice(0,10)+']').trim();
+  return insp.applyEdits({updateFeatures:[{attributes:iu}]}).then(r=>{
+    const r0=r&&r.updateFeatureResults&&r.updateFeatureResults[0]; if(r0&&r0.error) throw r0.error;
+    const row=document.getElementById('recrow_'+i); if(row){ row.style.opacity='.5'; row.innerHTML='<div class="recdone">\u2713 Reconciled '+esc(x.common||'tree')+' '+(x.treenum?('#'+x.treenum):'')+'</div>'; }
+  }).catch(err=>{ if(btn){ btn.disabled=false; btn.textContent='Reconcile'; } window.alert('Could not reconcile: '+(err&&err.message||err)); });
+}
+async function reconcileAll(){
+  const btn=document.getElementById('recAll'); btn.disabled=true; const orig=btn.textContent;
+  const updates=_flagged.map(x=>{ const iu={}; iu[insp.objectIdField]=x.inspOid; x.diffs.forEach(d=>{ iu[d.inspField]=d.tree; }); iu.maintenance_notes=((x.snapNote||'')+' [reconciled to tree by '+reviewerName+' '+new Date().toISOString().slice(0,10)+']').trim(); return {attributes:iu}; });
+  try{
+    for(let i=0;i<updates.length;i+=200){ btn.textContent='Reconciling\u2026 '+Math.min(i+200,updates.length)+'/'+updates.length; await insp.applyEdits({updateFeatures:updates.slice(i,i+200)}); }
+    document.getElementById('recStatus').textContent='Reconciled all '+updates.length+' record(s).';
+    document.getElementById('recList').innerHTML=''; btn.style.display='none';
+  }catch(err){ btn.disabled=false; btn.textContent=orig; window.alert('Reconcile-all failed: '+(err&&err.message||err)); }
+}
+function showIdentity(){
+  const q=document.getElementById('idQuick');
+  if(q) q.innerHTML=REVIEWERS.map(n=>'<button type="button" data-n="'+n+'">'+n+'</button>').join('');
+  const inp=document.getElementById('idName'); if(inp) inp.value=reviewerName||'';
+  document.getElementById('idOverlay').classList.remove('hidden');
+  setTimeout(()=>{ if(inp){try{inp.focus();}catch(e){}} },60);
+}
+function saveReviewer(){
+  const inp=document.getElementById('idName'); const v=(inp&&inp.value||'').trim();
+  if(!v){ if(inp)inp.focus(); return; }
+  reviewerName=v;
+  try{ sessionStorage.setItem('auroraReviewer', v); }catch(e){}
+  document.getElementById('idOverlay').classList.add('hidden');
+  updateReviewerChip();
+}
+function updateReviewerChip(){ const el=document.getElementById('reviewerChip'); if(el) el.innerHTML='Reviewer: <b style="color:var(--text)">'+esc(reviewerName||'\u2014')+'</b>';
+  const rb=document.getElementById('reconcileBtn'); if(rb) rb.style.display=(ADMINS.indexOf((reviewerName||'').trim().toUpperCase())>=0)?'':'none'; }
+(function(){ const q=document.getElementById('idQuick'); if(q) q.addEventListener('click',function(e){ const b=e.target.closest('button[data-n]'); if(!b)return; const inp=document.getElementById('idName'); if(inp)inp.value=b.getAttribute('data-n'); }); })();
+function workOrderFormHTML(o){
+  return '<div class="pop-h">Work order</div>'
+    + '<div class="edwarn" style="color:var(--muted);background:rgba(255,255,255,.04);border-color:var(--line)">Flags this tree for work (sets its recommended treatment). Use when a request comes in to perform specific work.</div>'
+    + '<label class="edl">Treatment / work required<select id="wo_RECOTREA">'+fieldOptions('RECOTREA', o.RECOTREA)+'</select></label>'
+    + '<label class="edl">Details (who requested it / reason)<textarea id="wo_note" rows="2" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-size:13.5px;padding:8px;border-radius:8px;resize:vertical"></textarea></label>'
+    + '<label class="edcheck"><input type="checkbox" id="wo_log" checked> Record this work order in the tree\u2019s log</label>'
+    + '<div class="edbtns"><button class="pop-edit ghost" data-act="wo-cancel">Cancel</button><button class="pop-done" data-act="wo-save">Assign work order</button></div>';
+}
+function saveWorkOrder(oid, gid, btn){
+  if(!reviewerName){ showIdentity(); return; }
+  const sel=document.getElementById('wo_RECOTREA'); const treat=sel?sel.value:'';
+  const noteEl=document.getElementById('wo_note'); const note=noteEl?noteEl.value.trim():'';
+  if(!treat){ window.alert('Choose the treatment / work required.'); return; }
+  const logIt=document.getElementById('wo_log') && document.getElementById('wo_log').checked;
+  if(!window.confirm('Assign work order \u201C'+treat+'\u201D to this tree'+(logIt?' and record it in the tree log':'')+'?')) return;
+  if(btn){ btn.disabled=true; btn.textContent='Saving\u2026'; }
+  const upd={}; upd[trees.objectIdField]=Number(oid); upd.RECOTREA=treat;
+  trees.applyEdits({updateFeatures:[{attributes:upd}]}).then(res=>{
+    const r0=res&&res.updateFeatureResults&&res.updateFeatureResults[0]; if(r0&&r0.error) throw r0.error;
+    if(!logIt || !gid) return null;
+    const ms=Date.now();
+    const log={attributes:{}}; log.attributes[CONFIG.fkField]=gid; log.attributes.activity_type='Inspection';
+    log.attributes.inspection_date=ms; log.attributes.ACTIVITY_DATE=ms; log.attributes.inspector_name=reviewerName;
+    log.attributes.recommendations=treat; log.attributes.maintenance_notes='Work order assigned by '+reviewerName+(note?(': '+note):'');
+    return insp.applyEdits({addFeatures:[log]}).catch(()=>null);
+  }).then(()=>{ trees.refresh(); loadAll(); if(viewRef&&viewRef.popup)viewRef.popup.close(); })
+    .catch(err=>{ if(btn){ btn.disabled=false; btn.textContent='Assign work order'; } window.alert('Could not save: '+(err&&err.message||err)+'\n\n(Your account may not have edit permission on this layer.)'); });
+}
+function renderTaxoList(rows){ const m=document.getElementById('ed_COMMON_menu'); if(!m)return; rows=(rows||[]).slice(0,300);
+  m.innerHTML=rows.length?rows.map(n=>'<div class="ci" data-tv="'+esc(n)+'">'+esc(n)+'</div>').join('')
+    :'<div class="ci" style="cursor:default;color:var(--muted)">No taxonomy match \u2014 name will be kept, Latin not derived</div>';
+}
+function onTaxoFocus(){ renderTaxoList(taxoList); const m=document.getElementById('ed_COMMON_menu'); if(m)m.classList.add('show'); }
+function onTaxoInput(){ const inp=document.getElementById('ed_COMMON'); const q=((inp&&inp.value)||'').trim().toLowerCase();
+  renderTaxoList(q?taxoList.filter(n=>String(n).toLowerCase().indexOf(q)>=0):taxoList);
+  const m=document.getElementById('ed_COMMON_menu'); if(m)m.classList.add('show'); }
+function pickTaxo(v){ const inp=document.getElementById('ed_COMMON'); if(inp)inp.value=v; const m=document.getElementById('ed_COMMON_menu'); if(m)m.classList.remove('show'); }
+function loadTaxonomy(){
+  if(!taxoLayer) return;
+  taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName IS NOT NULL", outFields:["CommonName","Species","Family"], returnGeometry:false, orderByFields:["CommonName"], num:3000}))
+    .then(r=>{ taxoMap={}; taxoList=[];
+      r.features.forEach(f=>{ const a=f.attributes; if(a.CommonName){ const cn=String(a.CommonName);
+        taxoMap[cn.toLowerCase()]={SPECIES2:a.Species, FAMILY:a.Family, GENERA:(a.Species?String(a.Species).trim().split(/\s+/)[0]:null)};
+        taxoList.push(cn); } });
+      taxoList.sort((x,y)=>String(x).localeCompare(String(y)));
+      let dl=document.getElementById('taxoDatalist'); if(!dl){ dl=document.createElement('datalist'); dl.id='taxoDatalist'; document.body.appendChild(dl); }
+      dl.innerHTML=taxoList.map(n=>'<option value="'+esc(n)+'"></option>').join('');
+    }).catch(()=>{});
+}
+function fieldOptions(fieldName, current){
+  const f=(trees.fields||[]).find(x=>x.name===fieldName);
+  let opts='<option value="">—</option>';
+  if(f&&f.domain&&f.domain.codedValues){ f.domain.codedValues.forEach(cv=>{ opts+='<option value="'+esc(cv.code)+'"'+(String(cv.code)===String(current)?' selected':'')+'>'+esc(cv.name)+'</option>'; }); }
+  else if(current!=null&&current!==''){ opts+='<option value="'+esc(current)+'" selected>'+esc(current)+'</option>'; }
+  return opts;
+}
+function editFormHTML(o){
+  const sel=(lab,fn)=>'<label class="edl">'+lab+'<select id="ed_'+fn+'">'+fieldOptions(fn,o[fn])+'</select></label>';
+  const txt=(lab,fn,val)=>'<label class="edl">'+lab+'<input id="ed_'+fn+'" value="'+esc(val==null?'':val)+'"></label>';
+  return '<div class="edwarn">Corrections overwrite the tree record. Use only to fix mistakes \u2014 real changes should be logged as a new inspection in the field app.</div>'
+    + '<div class="edl">Species (common name)'
+      + '<input id="ed_COMMON" value="'+esc(o.COMMON==null?'':o.COMMON)+'" autocomplete="off" oninput="onTaxoInput()" onfocus="onTaxoFocus()" placeholder="Type to search the taxonomy">'
+      + '<input type="hidden" id="ed_COMMON_orig" value="'+esc(o.COMMON==null?'':o.COMMON)+'">'
+      + '<div id="ed_COMMON_menu" class="taxomenu"></div>'
+      + '</div>'
+    + '<div class="edhint">Pick from the list \u2014 Latin name, genus &amp; family update automatically.</div>'
+    + sel('Overall health','OVERHEAL')+sel('Structural','STRUDEFE')+sel('Wound / canker','WOUNCANK')+sel('Dead / decay','DEADDECAY')
+    + sel('Failure potential','FAILPOTE')+sel('Pest / disease','PESTDISEAS')+sel('Impediment','IMPEDMNT')+sel('Recommended','RECOTREA')+sel('Site','SITELOCA')
+    + txt('DBH (cm)','DBH',o.DBH)+txt('Address','ADDRESS',o.ADDRESS)+txt('Comments','COMMENTS',o.COMMENTS)
+    + '<label class="edcheck"><input type="checkbox" id="ed_sync" checked> Also correct the most recent inspection snapshot (data-entry error)</label>'
+    + '<div class="edbtns"><button class="pop-edit ghost" data-act="cancel">Cancel</button><button class="pop-done" data-act="save">Save correction</button></div>';
+}
+function saveTreeCorrection(oid, gid, btn){
+  if(!reviewerName){ showIdentity(); return; }
+  const gval=id=>{ const el=document.getElementById(id); return el?el.value:undefined; };
+  const upd={}; upd[trees.objectIdField]=Number(oid); let taxoMiss=null;
+  // species change → derive Latin / genus / family from the taxonomy
+  const commonV=gval('ed_COMMON'), commonOrig=gval('ed_COMMON_orig');
+  if(commonV!==undefined && String(commonV).trim()!=='' && String(commonV).trim()!==String(commonOrig||'').trim()){
+    const cv=String(commonV).trim(); upd.COMMON=cv; const t=taxoMap[cv.toLowerCase()];
+    if(t){ if(t.SPECIES2!=null) upd.SPECIES2=t.SPECIES2; if(t.FAMILY!=null) upd.FAMILY=t.FAMILY; if(t.GENERA!=null) upd.GENERA=t.GENERA; }
+    else { taxoMiss=cv; }
+  }
+  ['OVERHEAL','STRUDEFE','WOUNCANK','DEADDECAY','FAILPOTE','PESTDISEAS','IMPEDMNT','RECOTREA','SITELOCA','ADDRESS','COMMENTS'].forEach(f=>{ const v=gval('ed_'+f); if(v!==undefined) upd[f]=(v===''?null:v); });
+  const dbhV=gval('ed_DBH');
+  if(dbhV!==undefined && String(dbhV).trim()!==''){ const d=parseFloat(dbhV); if(!isNaN(d)){ upd.DBH=d; upd.HEIGHT=Math.round((2.62+0.314*d)*100)/100; upd.CROWNDIAM=Math.round((1.68+0.202*d)*100)/100; upd.AGECLASS=Math.ceil(d/10)*10; } }
+  const syncInsp=document.getElementById('ed_sync') && document.getElementById('ed_sync').checked;
+  if(!window.confirm('Save these corrections to the tree record'+(syncInsp?' and the latest inspection snapshot':'')+'?')) return;
+  if(btn){ btn.disabled=true; btn.textContent='Saving\u2026'; }
+  trees.applyEdits({updateFeatures:[{attributes:upd}]}).then(res=>{
+    const r0=res&&res.updateFeatureResults&&res.updateFeatureResults[0]; if(r0&&r0.error) throw r0.error;
+    if(!syncInsp || !gid) return null;
+    return insp.queryFeatures({where:CONFIG.fkField+" = '"+String(gid).replace(/'/g,"''")+"' AND activity_type IN ('Inspection','Planted')", outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"], num:1}).then(q=>{
+      if(!q.features.length) return null;
+      const rec=q.features[0]; const iu={}; iu[insp.objectIdField]=rec.attributes[insp.objectIdField];
+      const map={condition_at_inspection:'OVERHEAL',Structdefe_at_inspection:'STRUDEFE',Woundcank_at_inspection:'WOUNCANK',Deaddecay_at_inspection:'DEADDECAY',Failpote_at_inspection:'FAILPOTE',Pestdisease_at_inspection:'PESTDISEAS',Impediment_at_inspection:'IMPEDMNT',DBH:'DBH',Species:'COMMON'};
+      Object.keys(map).forEach(k=>{ if(upd[map[k]]!==undefined) iu[k]=upd[map[k]]; });
+      iu.maintenance_notes=((rec.attributes.maintenance_notes||'')+' [corrected by '+reviewerName+' '+new Date().toISOString().slice(0,10)+']').trim();
+      return insp.applyEdits({updateFeatures:[{attributes:iu}]}).catch(()=>null);
+    }).catch(()=>null);
+  }).then(()=>{ trees.refresh(); loadAll(); if(taxoMiss) window.alert('Saved. Note: \u201C'+taxoMiss+'\u201D isn\u2019t in the taxonomy list, so Latin name / genus / family were not auto-updated \u2014 set those in the field app.'); if(viewRef&&viewRef.popup)viewRef.popup.close(); })
+    .catch(err=>{ if(btn){ btn.disabled=false; btn.textContent='Save correction'; } window.alert('Could not save: '+(err&&err.message||err)+'\n\n(Your account may not have edit permission on this layer.)'); });
+}
+/* ---- Advanced filter (any attribute / combination) ---- */
+let _advFields=[];
+function advFieldList(){
+  const skipName=/^(objectid|globalid|shape|shape_|shape__|creationdate|editdate|creator|editor|created_user|last_edited_user|created_date|last_edited_date)$/i;
+  const skipType={'oid':1,'global-id':1,'guid':1,'geometry':1,'blob':1,'raster':1,'xml':1};
+  const nums={'small-integer':1,'integer':1,'single':1,'double':1,'long':1};
+  return (trees.fields||[]).filter(f=>!skipType[f.type] && !skipName.test(f.name||'')).map(f=>({
+    name:f.name, alias:f.alias||f.name, type:f.type,
+    domain:(f.domain&&f.domain.codedValues)?f.domain.codedValues:null, isNum:!!nums[f.type], isDate:f.type==='date'
+  })).sort((a,b)=>String(a.alias).localeCompare(String(b.alias)));
+}
+function advOpsHTML(field){
+  let ops;
+  if(field.isDate) ops=[['after','on / after'],['before','before']];
+  else if(field.isNum) ops=[['=','='],['<>','\u2260'],['<','<'],['<=','\u2264'],['>','>'],['>=','\u2265']];
+  else if(field.domain) ops=[['=','is'],['<>','is not']];
+  else ops=[['contains','contains'],['starts','starts with'],['=','is'],['<>','is not']];
+  return ops.map(o=>'<option value="'+o[0]+'">'+o[1]+'</option>').join('');
+}
+function advValHTML(field){
+  if(field.domain) return '<select>'+field.domain.map(cv=>'<option value="'+esc(cv.code)+'">'+esc(cv.name)+'</option>').join('')+'</select>';
+  if(field.isDate) return '<input type="date">';
+  if(field.isNum) return '<input type="number" inputmode="decimal" placeholder="value">';
+  return '<span class="advcombo"><input type="text" placeholder="type to pick a value"><div class="advmenu"></div></span>';
+}
+function advQueryDistinct(fieldName, q){
+  const where = q ? fieldName+" LIKE '"+q1(q)+"%'" : fieldName+" IS NOT NULL";
+  return stats.queryFeatures({where:where, outFields:[fieldName], returnDistinctValues:true, orderByFields:[fieldName], num:60, returnGeometry:false})
+    .then(r=>{ const seen={},out=[]; r.features.forEach(f=>{ const v=f.attributes[fieldName]; if(v!=null&&String(v).trim()!==''&&!seen[v]){seen[v]=1;out.push(v);} }); return out; })
+    .catch(()=>[]);
+}
+function wireAdvVal(row, field){
+  const combo=row.querySelector('.advcombo'); if(!combo || !field || field.domain || field.isNum || field.isDate) return;
+  const inp=combo.querySelector('input'), menu=combo.querySelector('.advmenu'); let timer=null;
+  const run=()=>{ const q=(inp.value||'').trim(); clearTimeout(timer); timer=setTimeout(()=>{
+    advQueryDistinct(field.name,q).then(vals=>{ menu.innerHTML=vals.length?vals.map(v=>'<div class="ci" data-av="'+esc(v)+'">'+esc(v)+'</div>').join(''):'<div class="ci" style="cursor:default;color:var(--muted)">No matching values</div>'; menu.classList.add('show'); }); },200); };
+  inp.addEventListener('focus',run);
+  inp.addEventListener('input',()=>{ run(); advPreview(); });
+  menu.addEventListener('click',e=>{ const it=e.target.closest('.ci[data-av]'); if(!it)return; inp.value=it.getAttribute('data-av'); menu.classList.remove('show'); advPreview(); });
+}
+function addAdvCond(){
+  const wrap=document.getElementById('advConds'); if(!_advFields.length) return;
+  const row=document.createElement('div'); row.className='advrow';
+  row.innerHTML='<select class="advfield">'+_advFields.map((f,i)=>'<option value="'+i+'">'+esc(f.alias)+'</option>').join('')+'</select>'
+    +'<select class="advop">'+advOpsHTML(_advFields[0])+'</select>'
+    +'<span class="advval">'+advValHTML(_advFields[0])+'</span>'
+    +'<button class="advdel" title="Remove">\u00d7</button>';
+  wrap.appendChild(row);
+  wireAdvVal(row, _advFields[0]);
+  row.querySelector('.advfield').addEventListener('change',function(){ const f=_advFields[this.value]; row.querySelector('.advop').innerHTML=advOpsHTML(f); row.querySelector('.advval').innerHTML=advValHTML(f); wireAdvVal(row,f); advPreview(); });
+  row.querySelector('.advdel').addEventListener('click',function(){ row.remove(); advPreview(); });
+  row.addEventListener('input',advPreview); row.addEventListener('change',advPreview);
+  advPreview();
+}
+function advClause(field,op,val){
+  const fn=field.name;
+  if(field.isDate){ if(!val) return null; if(op==='after') return fn+" >= "+dlit(val); if(op==='before') return fn+" < "+dlit(val); return null; }
+  if(field.isNum){ if(val===''||val==null) return null; const num=parseFloat(val); if(isNaN(num)) return null; return fn+" "+op+" "+num; }
+  if(op==='contains'){ if(!val) return null; return fn+" LIKE '%"+q1(val)+"%'"; }
+  if(op==='starts'){ if(!val) return null; return fn+" LIKE '"+q1(val)+"%'"; }
+  if(op==='='||op==='<>'){ if(val==='') return null; return fn+" "+op+" '"+q1(val)+"'"; }
+  return null;
+}
+function buildAdvWhere(){
+  const rows=[...document.querySelectorAll('#advConds .advrow')]; const clauses=[];
+  rows.forEach(r=>{ const fi=r.querySelector('.advfield').value; const field=_advFields[fi]; if(!field)return;
+    const op=r.querySelector('.advop').value; const vc=r.querySelector('.advval select, .advval input'); const val=vc?vc.value:'';
+    const c=advClause(field,op,val); if(c)clauses.push(c); });
+  if(!clauses.length) return '';
+  const join=document.getElementById('advMatch').value==='OR'?' OR ':' AND ';
+  return clauses.map(c=>'('+c+')').join(join);
+}
+function advPreview(){ const el=document.getElementById('advPreview'); if(el){ const w=buildAdvWhere(); el.textContent=w||'(add conditions to build a query)'; } }
+document.addEventListener('click',function(e){ document.querySelectorAll('.advcombo').forEach(c=>{ if(!c.contains(e.target)){ const m=c.querySelector('.advmenu'); if(m)m.classList.remove('show'); } }); });
+function openAdv(){ _advFields=advFieldList(); const c=document.getElementById('advConds'); if(!c.children.length) addAdvCond(); else advPreview(); document.getElementById('advPanel').classList.remove('hidden'); }
+function closeAdv(){ document.getElementById('advPanel').classList.add('hidden'); }
+function applyAdv(){
+  const w=buildAdvWhere(); closeAdv();
+  const badge=document.getElementById('advActive');
+  if(!w){ if(badge)badge.textContent=''; applyFilter('all'); return; }
+  ['spInput','pkInput','adInput'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  if(badge)badge.textContent='\u25cf custom filter active';
+  setFilter('Advanced filter', w, 'advanced'); scrollMap();
+}
+function clearAdv(){ document.getElementById('advConds').innerHTML=''; advPreview(); const badge=document.getElementById('advActive'); if(badge)badge.textContent=''; closeAdv(); applyFilter('all'); }
+function toggleRefLayer(which, on){ const L=which==='parcels'?parcelRefLayer:which==='roads'?roadsRefLayer:gridRefLayer; if(L) L.visible=!!on; }
+function startAreaSelect(){ if(!sketchVM){ window.alert('Drawing tool is still loading — try again in a moment.'); return; } _selGeom=null; if(sketchLayer)sketchLayer.removeAll(); try{ sketchVM.cancel(); }catch(e){} sketchVM.create('polygon'); const b=document.getElementById('areaBtn'); if(b)b.textContent='✏ Drawing… (double-click to finish)'; }
+function applySpatial(){ const b=document.getElementById('areaBtn'); if(b)b.textContent='▱ Draw area to select'; const cb=document.getElementById('areaClear'); if(cb)cb.style.display=_selGeom?'':'none'; setFilter(currentFilter.label,currentFilter.where,currentFilter.id); scrollMap(); }
+function clearAreaSelect(){ _selGeom=null; if(sketchLayer)sketchLayer.removeAll(); const cb=document.getElementById('areaClear'); if(cb)cb.style.display='none'; setFilter(currentFilter.label,currentFilter.where,currentFilter.id); }
+function clearAllScope(){ _selGeom=null; if(sketchLayer)sketchLayer.removeAll(); const cb=document.getElementById('areaClear'); if(cb)cb.style.display='none'; applyFilter('all'); }
+let _clusterCfg=null;
+function toggleCluster(on){
+  if(!trees) return;
+  if(on){
+    if(!_clusterCfg) _clusterCfg={ type:"cluster", clusterRadius:"70px", clusterMinSize:"16px", clusterMaxSize:"46px",
+      labelingInfo:[{deconflictionStrategy:"none", labelExpressionInfo:{expression:"Text($cluster_count, '#,###')"}, symbol:{type:"text", color:"#ffffff", haloColor:"#0F151A", haloSize:1, font:{size:11, weight:"bold"}}, labelPlacement:"center-center"}] };
+    trees.featureReduction=_clusterCfg;
+  } else { trees.featureReduction=null; }
+}
+/* ---- Grid canopy & 10-year projection ---- */
+const GP_GROWTH=0.8, GP_YEARS=10, GP_DBH=GP_GROWTH*GP_YEARS, CROWN_A=1.68, CROWN_B=0.202;
+function crownArea(dbh){ const c=CROWN_A+CROWN_B*(dbh||0); return Math.PI*Math.pow(c/2,2); }
+// relative canopy ramp: red (low / no cover) -> amber -> deep green (highest cover = darkest)
+function gpRamp(t){ t=Math.max(0,Math.min(1,t||0)); const stops=[[200,60,48],[228,170,45],[52,150,72]]; let seg,f;
+  if(t<0.5){ seg=0; f=t/0.5; } else { seg=1; f=(t-0.5)/0.5; }
+  const a=stops[seg], b=stops[seg+1];
+  return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f),0.55]; }
+async function computeGridStats(){
+  const W=curWhere(); const S={};
+  let start=0, page=2000;
+  while(true){
+    const res=await stats.queryFeatures(withGeom({where:W, groupByFieldsForStatistics:["GRID","DBH"], outStatistics:[{statisticType:"count",onStatisticField:stats.objectIdField,outStatisticFieldName:"cnt"}], returnGeometry:false, num:page, start:start, orderByFields:["GRID"]}));
+    res.features.forEach(f=>{ const A=f.attributes; const g=A.GRID; if(g==null||String(g).trim()==='')return; const key=String(g); const cnt=A.cnt||0; const d=(A.DBH==null?0:A.DBH);
+      const aN=crownArea(d), aF=crownArea(d+GP_DBH);
+      if(!S[key])S[key]={n:0,now:0,fut:0}; S[key].n+=cnt; S[key].now+=cnt*aN; S[key].fut+=cnt*aF; });
+    if(res.features.length<page) break; start+=page; if(start>200000) break;
+  }
+  const geoms={};
+  if(gridRefLayer){ try{ const gr=await gridRefLayer.queryFeatures({where:"1=1", outFields:[CONFIG.gridLabelField], returnGeometry:true, outSpatialReference:viewRef.spatialReference});
+    gr.features.forEach(f=>{ const key=f.attributes[CONFIG.gridLabelField]; if(key==null)return; let area=0; try{ area=_geomEngine.geodesicArea(f.geometry,"square-meters"); if(area<0)area=-area; }catch(e){}
+      let c=null; try{ c=f.geometry.centroid; }catch(e){}
+      geoms[String(key)]={geometry:f.geometry, centroid:c||f.geometry, area:area}; }); }catch(e){} }
+  return {stats:S, geoms:geoms};
+}
+async function openGridProjection(){
+  document.getElementById('gridPanel').style.display='block';
+  document.getElementById('gpStatus').textContent='Calculating grid canopy\u2026';
+  document.getElementById('gpLegend').innerHTML=''; document.getElementById('gpSummary').innerHTML='';
+  scrollMap();
+  if(gridRefLayer) gridRefLayer.labelsVisible=false;   // suppress the grid's own page-number labels; we draw our own by zoom
+  if(!_gridZoomWatch && viewRef) _gridZoomWatch=viewRef.watch('scale', ()=>updateGridLabels());
+  try{ _gridStats=await computeGridStats(); document.getElementById('gpStatus').textContent=''; renderGridMap(); }
+  catch(err){ document.getElementById('gpStatus').textContent='Could not calculate: '+(err&&err.message||err); }
+}
+function setGridMetric(m){ _gridMetric=m; ['now','fut','count'].forEach(k=>{ const b=document.getElementById('gpm_'+k); if(b)b.classList.toggle('on',k===m); }); renderGridMap(); }
+function renderGridMap(){
+  if(!gridStatsLayer||!_gridStats) return; gridStatsLayer.removeAll(); if(gridLabelLayer)gridLabelLayer.removeAll();
+  const S=_gridStats.stats, G=_gridStats.geoms; const keys=Object.keys(G);
+  const valOf=(k,metric)=>{ const s=S[k]||{n:0,now:0,fut:0}; const area=G[k].area||0;
+    if(metric==='count') return s.n; return area?((metric==='fut'?s.fut:s.now)/area*100):0; };
+  // Colour scale is ABSOLUTE and SHARED between "now" and "10 yrs": 0 (red = no cover) up to the
+  // projected (future) maximum. This keeps the two views directly comparable, so canopy growth shows
+  // as grids darkening toward green rather than the scale silently shifting under them.
+  const mn=0; let mx;
+  if(_gridMetric==='count') mx=Math.max(1,...keys.map(k=>valOf(k,'count')));
+  else mx=Math.max(0.0001,...keys.map(k=>valOf(k,'fut')));
+  const vals={}; keys.forEach(k=>{ vals[k]=valOf(k,_gridMetric); });
+  keys.forEach(k=>{ const v=vals[k]; const g=G[k].geometry;
+    gridStatsLayer.add({geometry:g, symbol:{type:"simple-fill", color:gpRamp((v-mn)/((mx-mn)||1)), outline:{color:[255,255,255,0.35], width:0.7}}});
+  });
+  _gridRender={keys:keys, vals:vals, mn:mn, mx:mx};
+  updateGridLabels();
+  // legend + overall summary
+  const unit=(_gridMetric==='count')?' trees':'%';
+  document.getElementById('gpLegend').innerHTML='<span>0'+unit+'</span><div class="gpramp"></div><span>'+Math.round(mx)+unit+(_gridMetric==='now'?' (10-yr max)':'')+'</span>';
+  let tn=0,tNow=0,tFut=0; keys.forEach(k=>{ const s=S[k]||{n:0,now:0,fut:0}; tn+=s.n; tNow+=s.now; tFut+=s.fut; });
+  const haNow=tNow/10000, haFut=tFut/10000; const inc=tNow?((tFut-tNow)/tNow*100):0;
+  document.getElementById('gpSummary').innerHTML='<div class="gprow"><span>Trees in view</span><b>'+tn.toLocaleString()+'</b></div>'
+    +'<div class="gprow"><span>Canopy now</span><b>'+haNow.toFixed(2)+' ha</b></div>'
+    +'<div class="gprow"><span>Canopy in 10 yrs</span><b>'+haFut.toFixed(2)+' ha</b></div>'
+    +'<div class="gprow" style="color:var(--good)"><span>Projected growth</span><b>+'+inc.toFixed(0)+'%</b></div>';
+}
+// zoom-based labels: far = colour only · mid = grid page number · close = value + tree count
+function updateGridLabels(){
+  if(!gridLabelLayer||!_gridStats||!_gridRender) return;
+  gridLabelLayer.removeAll();
+  const scale = viewRef && viewRef.scale ? viewRef.scale : 1e9;
+  const mode = scale>16000 ? 'none' : (scale>6000 ? 'page' : 'metric');
+  if(mode==='none') return;
+  const S=_gridStats.stats, G=_gridStats.geoms;
+  _gridRender.keys.forEach(k=>{
+    const c=G[k].centroid; if(!c) return; const s=S[k]||{n:0,now:0,fut:0}; let text;
+    if(mode==='page'){ text=String(k); }
+    else { const v=_gridRender.vals[k]; text=(_gridMetric==='count')?(s.n.toLocaleString()+' trees'):(Math.round(v)+'%\n'+s.n.toLocaleString()+' trees'); }
+    gridLabelLayer.add({geometry:c, symbol:{type:"text", color:"#ffffff", haloColor:"#0F151A", haloSize:1.6, font:{size:mode==='page'?13:12, weight:"bold"}, text:text}});
+  });
+}
+function clearGridProjection(){
+  if(gridStatsLayer)gridStatsLayer.removeAll(); if(gridLabelLayer)gridLabelLayer.removeAll();
+  if(_gridZoomWatch){ try{_gridZoomWatch.remove();}catch(e){} _gridZoomWatch=null; }
+  if(gridRefLayer) gridRefLayer.labelsVisible=true;
+  _gridStats=null; _gridRender=null; document.getElementById('gridPanel').style.display='none';
+}
+function markMaintenanceDone(oid, gid, rec, btn){
+  if(!reviewerName){ showIdentity(); return; }
+  const ok=window.confirm('Mark this maintenance as completed by '+reviewerName+'?\n\n"'+rec+'"\n\nThis clears the tree\u2019s recommended treatment and logs a completed activity.');
+  if(!ok) return;
+  btn.disabled=true; btn.textContent='Saving\u2026';
+  const now=new Date(); const ms=now.getTime();
+  const act=/Removal/i.test(rec)?'Removed':(/Prun/i.test(rec)?'Pruned':'Inspection');
+  const treeEdit={attributes:{}}; treeEdit.attributes[trees.objectIdField]=Number(oid); treeEdit.attributes.RECOTREA='No Treatment';
+  trees.applyEdits({updateFeatures:[treeEdit]}).then(res=>{
+    const r0=res&&res.updateFeatureResults&&res.updateFeatureResults[0];
+    if(r0&&r0.error) throw r0.error;
+    const log={attributes:{}}; log.attributes[CONFIG.fkField]=gid; log.attributes.activity_type=act;
+    log.attributes.inspection_date=ms; log.attributes.ACTIVITY_DATE=ms;
+    log.attributes.inspector_name=reviewerName; log.attributes.maintenance_notes='Maintenance completed via dashboard by '+reviewerName+' (was: '+rec+')';
+    return insp.applyEdits({addFeatures:[log]}).catch(()=>null);
+  }).then(()=>{
+    trees.refresh(); loadAll();
+    btn.textContent='\u2713 Completed by '+reviewerName; btn.classList.add('done');
+  }).catch(err=>{ btn.disabled=false; btn.textContent='\u2713 Mark maintenance complete'; window.alert('Could not save the edit: '+(err&&err.message||err)+'\n\n(Your account may not have edit permission on this layer.)'); });
+}
+function loadSpeciesList(){
+  stats.queryFeatures({where:"1=1",groupByFieldsForStatistics:["COMMON"],outStatistics:[{statisticType:"count",onStatisticField:stats.objectIdField,outStatisticFieldName:"cnt"}],returnGeometry:false}).then(r=>{
+    let rows=r.features.map(f=>({k:f.attributes.COMMON,n:f.attributes.cnt})).filter(x=>x.k);
+    rows.sort((a,b)=>String(a.k).localeCompare(String(b.k)));
+    window._species=rows;
+  }).catch(()=>{});
+}
+function renderSpMenu(q){
+  const menu=document.getElementById('spMenu'); if(!menu)return;
+  const list=window._species||[]; const ql=(q||'').trim().toLowerCase();
+  const rows=(ql?list.filter(x=>String(x.k).toLowerCase().indexOf(ql)>=0):list).slice(0,500);
+  let html='<div class="ci allrow" data-v="">Whole inventory (clear species)</div>';
+  html+=rows.map(x=>'<div class="ci" data-v="'+esc(x.k)+'"><span>'+esc(x.k)+'</span><span class="cn">'+x.n.toLocaleString()+'</span></div>').join('');
+  if(!rows.length&&ql) html+='<div class="ci" style="color:var(--muted);cursor:default">No match — press Enter to search anyway</div>';
+  menu.innerHTML=html;
+}
+function openSpMenu(){ renderSpMenu(document.getElementById('spInput').value); document.getElementById('spMenu').classList.add('show'); }
+function closeSpMenu(){ const m=document.getElementById('spMenu'); if(m)m.classList.remove('show'); }
+function toggleSpMenu(){ const m=document.getElementById('spMenu'); if(!m)return; if(m.classList.contains('show'))closeSpMenu(); else openSpMenu(); }
+function onSpInput(){ renderSpMenu(document.getElementById('spInput').value); document.getElementById('spMenu').classList.add('show'); }
+function pickSpecies(v){
+  closeSpMenu();
+  const inp=document.getElementById('spInput');
+  if(!v){ if(inp)inp.value=''; applyFilter('all'); return; }
+  const list=window._species||[]; const ex=list.find(x=>String(x.k)===v)||list.find(x=>String(x.k).toLowerCase()===String(v).toLowerCase());
+  const name=ex?ex.k:v; if(inp)inp.value=name; clearOtherFinders('spInput');
+  setFilter(name,"COMMON = '"+q1(name)+"'",'species'); scrollMap();
+}
+function filterWhere(label,where){ setFilter(label,where); scrollMap(); }
+function filterPest(v){ const w=(v==='__EAB__')?"PESTDISEAS LIKE '%EAB%'":"PESTDISEAS = '"+q1(v)+"'"; setFilter(v==='__EAB__'?'EAB-affected':v, w); scrollMap(); }
+function scrollMap(){ document.getElementById('map').scrollIntoView({behavior:'smooth',block:'center'}); }
+
+/* ---- date range (filters everything by DATE_NEW = last assessed) ---- */
+function buildDateWhere(from,to){
+  const parts=[];
+  if(from) parts.push(dateField()+" >= "+dlit(from));
+  if(to){ const d=new Date(to); d.setDate(d.getDate()+1); parts.push(dateField()+" < "+dlit(d.toISOString().slice(0,10))); }
+  return parts.length?parts.join(" AND "):"1=1";
+}
+function isoAgo(years){ const d=new Date(); d.setFullYear(d.getFullYear()-years); return d.toISOString().slice(0,10); }
+function markPreset(id){ document.querySelectorAll('.dbp').forEach(b=>b.classList.remove('on')); const el=document.getElementById('dp_'+id); if(el)el.classList.add('on'); }
+function presetDate(kind){
+  const today=new Date().toISOString().slice(0,10);
+  const F=document.getElementById('dFrom'), T=document.getElementById('dTo');
+  if(kind==='all'){ F.value=''; T.value=''; dateWhere="1=1"; }
+  else if(kind==='stale'){ F.value=''; T.value=isoAgo(5); dateWhere=dateField()+" < "+dlit(isoAgo(5)); }
+  else { const yrs=parseInt(kind,10); F.value=isoAgo(yrs); T.value=today; dateWhere=buildDateWhere(F.value,T.value); }
+  markPreset(kind);
+  refreshForDate();
+}
+function applyDates(){
+  const from=document.getElementById('dFrom').value, to=document.getElementById('dTo').value;
+  dateWhere=buildDateWhere(from,to);
+  markPreset(from||to?'none':'all');
+  refreshForDate();
+}
+function refreshForDate(){ setFilter(currentFilter.label,currentFilter.where,currentFilter.id); }
+
+// iOS-safe saving: the native share sheet works where <a download> is blocked after async work.
+// Must be invoked inside a user gesture (hence the "tap to save" second step on mobile).
+function anchorSave(blob, filename){
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.rel='noopener'; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); }, 5000);
+}
+function saveFileNow(blob, filename, mime){
+  try{
+    if(typeof File!=='undefined' && navigator.canShare){
+      const f=new File([blob], filename, {type:mime||blob.type||'application/octet-stream'});
+      if(navigator.canShare({files:[f]})){ navigator.share({files:[f], title:filename}).catch(function(){ anchorSave(blob,filename); }); return; }
+    }
+  }catch(e){}
+  anchorSave(blob, filename);
+}
+function downloadCSV(){
+  const btn=document.getElementById('dlBtn');
+  if(btn._pending){ saveFileNow(btn._pending.blob, btn._pending.filename, btn._pending.mime); return; }
+  btn.disabled=true; const old=btn.dataset.old||btn.innerHTML; btn.dataset.old=old; btn.textContent='Preparing…';
+  trees.queryFeatures({where:AND(currentFilter.where,dateWhere), outFields:DL_FIELDS, returnGeometry:true, outSpatialReference:{wkid:4326}}).then(res=>{
+    const head=DL_FIELDS.concat(["LAT","LON"]);
+    const cell=v=>{ if(v==null)return''; v=String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+    const lines=[head.join(",")];
+    res.features.forEach(f=>{ const a=f.attributes,g=f.geometry;
+      lines.push(DL_FIELDS.map(k=>cell(a[k])).concat([g?g.latitude:'',g?g.longitude:'']).join(",")); });
+    const blob=new Blob([lines.join("\n")],{type:"text/csv"});
+    const filename="aurora_"+currentFilter.id+"_"+new Date().toISOString().slice(0,10)+".csv";
+    btn._pending={blob,filename,mime:"text/csv"}; btn.disabled=false; btn.innerHTML='\u2913 Tap to save CSV';
+    saveFileNow(blob, filename, "text/csv");   // desktop saves immediately; on iOS the user taps once more
+    setTimeout(function(){ if(btn._pending&&btn._pending.filename===filename){ btn._pending=null; btn.innerHTML=old; } }, 45000);
+  }).catch(err=>{ btn.disabled=false; btn.innerHTML=(btn.dataset.old||'\u2913 Download work list (CSV)'); alert("Download failed: "+(err.message||err)); });
+}
+
+// ---- multi-sheet Excel report (mirrors the annual deliverable), from live data ----
+const REPORT_COLS=[
+  ["DATE","Date"],["TREENUM_NEW","Tree #"],["ADDRESS","Address"],["STREET","Street"],["PARKNAM","Park"],["SITELOCA","Site"],
+  ["COMMON","Common name"],["FAMILY","Family"],["GENERA","Genus"],["SPECIES2","Species"],
+  ["DBH","DBH (cm)"],["HEIGHT","Height (m)"],["CROWNDIAM","Crown (m)"],["AGECLASS","Age class"],
+  ["OVERHEAL","Health"],["STRUDEFE","Structural"],["WOUNCANK","Wound/canker"],["DEADDECAY","Dead/decay"],["FAILPOTE","Failure"],["PESTDISEAS","Pest/disease"],["IMPEDMNT","Impediment"],
+  ["RECOTREA","Recommended treatment"],["GRID","Grid"],["X","UTM X"],["Y","UTM Y"],["INSPECTR","Inspector"],["COMMENTS","Comments"]
+];
+function dstr(v){ if(v==null||v==='')return''; const d=new Date(v); return isNaN(d)?v:d.toISOString().slice(0,10); }
+async function downloadXLSX(){
+  const btn=document.getElementById('xlsxBtn');
+  if(btn._pending){ saveFileNow(btn._pending.blob, btn._pending.filename, btn._pending.mime); return; }
+  if(typeof XLSX==='undefined'){ alert('Excel library is still loading — try again in a few seconds.'); return; }
+  const old=btn.dataset.old||btn.innerHTML; btn.dataset.old=old; btn.disabled=true; btn.textContent='Building report… 0';
+  try{
+    const W=curWhere();
+    let all=[], start=0, page=2000;
+    while(true){
+      const res=await stats.queryFeatures(withGeom({where:W, outFields:["*"], returnGeometry:true, outSpatialReference:{wkid:4326}, num:page, start:start, orderByFields:["TREENUM_NEW"]}));
+      all=all.concat(res.features); btn.textContent='Building report… '+all.length;
+      if(res.features.length<page) break; start+=page; if(start>80000) break;
+    }
+    const total=all.length||1;
+    const have=all.length?all[0].attributes:{};
+    const cols=REPORT_COLS.filter(c=>c[0] in have);
+    const head=cols.map(c=>c[1]).concat(["Latitude","Longitude"]);
+    const inv=[head];
+    all.forEach(f=>{ const a=f.attributes,g=f.geometry;
+      const row=cols.map(c=>c[0]==="DATE"?dstr(a[c[0]]):(a[c[0]]==null?'':a[c[0]]));
+      row.push(g?g.latitude:'',g?g.longitude:''); inv.push(row); });
+    const summary=(title,rows)=>{ rows=rows.filter(r=>r.k!=null&&String(r.k).trim()!=='').sort((a,b)=>b.n-a.n);
+      const aoa=[[title],['Category','# of Trees','% of Total']];
+      rows.forEach(r=>aoa.push([r.k,r.n,Math.round(r.n/total*1000)/10]));
+      aoa.push(['Total',rows.reduce((s,r)=>s+r.n,0),100]); return aoa; };
+    const [health,genera,species,treat,pest,age,park,street]=await Promise.all([
+      groupCountW("OVERHEAL",W),groupCountW("GENERA",W),groupCountW("COMMON",W),groupCountW("RECOTREA",W),
+      groupCountW("PESTDISEAS",W),groupCountW("AGECLASS",W),
+      ("PARKNAM" in have)?groupCountW("PARKNAM",W):Promise.resolve([]),
+      ("STREET" in have)?groupCountW("STREET",W):Promise.resolve([])
+    ]);
+    const ashTot=await countW(AND("COMMON LIKE '%Ash%'",W)); const ashEab=await countW(AND("COMMON LIKE '%Ash%' AND PESTDISEAS LIKE '%EAB%'",W));
+    const rangeTxt=(dateWhere==="1=1")?"All dates":dateWhere;
+    const cover=[
+      ["Town of Aurora — Urban Tree Inventory"],["Live export from ArcGIS hosted service"],[""],
+      ["Generated",new Date().toLocaleString()],["Date range (last assessed)",rangeTxt],["Filter",currentFilter.id==='all'?'All trees':currentFilter.label],["Trees in this export",total],[""],
+      ["Sheets","Tree Inventory (full records) plus summaries by health, genus, species, treatment, pest/disease and age class"+(("PARKNAM" in have)?", park":"")+(("STREET" in have)?", street":"")+"."],
+      ["Note","Live snapshot. Percentages are of the trees in this export. For official ecosystem-benefit figures, run i-Tree Eco."]
+    ];
+    const wb=XLSX.utils.book_new();
+    const add=(name,aoa)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),name.slice(0,31));
+    add("About",cover);
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inv),"Tree Inventory");
+    add("Summary of Health",summary("Trees by health rating",health));
+    add("Summary by Genera",summary("Trees by genus",genera));
+    add("Summary by Species",summary("Trees by species",species));
+    add("Treatment Summary",summary("Trees by recommended treatment",treat));
+    add("Pest & Disease",summary("Trees by pest / disease",pest.filter(r=>!/^none/i.test(String(r.k)))));
+    add("Summary of Ash",[["Ash / Emerald Ash Borer"],["Metric","Value"],["Ash trees",ashTot],["Ash with confirmed/suspected EAB",ashEab],["% of ash affected",ashTot?Math.round(ashEab/ashTot*1000)/10:0]]);
+    add("Age Structure",summary("Trees by age class (cm)",age));
+    if(park.length) add("Park Summary",summary("Trees by park",park));
+    if(street.length) add("Street Summary",summary("Trees by street",street));
+    const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx'});
+    const mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const blob=new Blob([wbout],{type:mime});
+    const filename="Aurora_Tree_Inventory_"+new Date().toISOString().slice(0,10)+".xlsx";
+    btn._pending={blob,filename,mime}; btn.disabled=false; btn.innerHTML='\u2913 Tap to save Excel';
+    saveFileNow(blob, filename, mime);
+    setTimeout(function(){ if(btn._pending&&btn._pending.filename===filename){ btn._pending=null; btn.innerHTML=old; } }, 45000);
+  }catch(err){ btn.innerHTML=old; btn.disabled=false; alert("Report failed: "+(err.message||err)); }
+}
+
+function bar(lab,val,max,c,onclick){return '<div class="bar'+(onclick?' click':'')+'"'+(onclick?' onclick="'+onclick+'"':'')+'><div class="lab" title="'+esc(lab)+'">'+esc(lab)+'</div><div class="track"><div class="fill" style="width:'+(max?Math.max(3,val/max*100):3)+'%;background:'+c+'"></div></div><div class="val">'+val+'</div></div>';}
+function barPct(lab,val,max,total,c,onclick){return '<div class="bar wide'+(onclick?' click':'')+'"'+(onclick?' onclick="'+onclick+'"':'')+'><div class="lab" title="'+esc(lab)+'">'+esc(lab)+'</div><div class="track"><div class="fill" style="width:'+(max?Math.max(3,val/max*100):3)+'%;background:'+c+'"></div></div><div class="val">'+Number(val).toLocaleString()+' \u00b7 '+pct(val,total)+'%</div></div>';}
+function withGeom(o){ if(_selGeom){ o.geometry=_selGeom; o.spatialRelationship="intersects"; } return o; }
+function count(where){return stats.queryFeatureCount(withGeom({where:AND(where,curWhere())})).catch(()=>0);}
+function groupCount(field){return stats.queryFeatures(withGeom({where:curWhere(),groupByFieldsForStatistics:[field],outStatistics:[{statisticType:"count",onStatisticField:stats.objectIdField,outStatisticFieldName:"cnt"}],returnGeometry:false})).then(r=>r.features.map(f=>({k:f.attributes[field],n:f.attributes.cnt}))).catch(()=>[]);}
+// filter-aware variants: honour the current map filter (category) AND the date range
+function curWhere(){ return AND(currentFilter.where, dateWhere); }
+function countW(where){ return stats.queryFeatureCount(withGeom({where:where})).catch(()=>0); }
+function groupCountW(field, where){ return stats.queryFeatures(withGeom({where:where,groupByFieldsForStatistics:[field],outStatistics:[{statisticType:"count",onStatisticField:stats.objectIdField,outStatisticFieldName:"cnt"}],returnGeometry:false})).then(r=>r.features.map(f=>({k:f.attributes[field],n:f.attributes.cnt}))).catch(()=>[]);}
+
+function loadAll(){
+  document.getElementById('liveLbl').textContent='live';
+  count("1=1").then(t=>{ window._TOTAL=t; document.getElementById('kTotal').textContent=t.toLocaleString();
+    count("OVERHEAL IN ('Good','Satisfactory')").then(n=>{document.getElementById('kHealthy').textContent=pct(n,t)+'%';document.getElementById('kHealthyN').textContent=n.toLocaleString()+' trees';});
+    loadDiversity();
+  });
+  count("RECOTREA LIKE '%Immediate%' OR RECOTREA LIKE '%High Priority%'").then(n=>document.getElementById('kAction').textContent=n.toLocaleString());
+  count("OVERHEAL IN ('Dead','Death imminent')").then(n=>document.getElementById('kFlagged').textContent=n.toLocaleString());
+
+  groupCount("OVERHEAL").then(rows=>{
+    const m={};rows.forEach(r=>m[r.k]=r.n);
+    const rated=CONDORDER.filter(c=>m[c] && NON_CONDITION.indexOf(c)<0);   // Good..Death imminent
+    const other=CONDORDER.filter(c=>m[c] && NON_CONDITION.indexOf(c)>=0);  // Removed / Stump / Stump carving
+    const total=rated.reduce((s,c)=>s+m[c],0)||1;   // denominator = living rated trees → percentages total 100%
+    const mx=Math.max(1,...rated.map(c=>m[c]),...other.map(c=>m[c]));
+    let html=rated.length?rated.map(c=>barPct(c,m[c],mx,total,col(c),"filterCond('"+esc(c)+"')")).join(''):'<div class="loading">No data.</div>';
+    if(other.length){ html+='<div class="condnote">Not living canopy \u2014 excluded from the percentages above:</div>'
+      +other.map(c=>bar(c,m[c].toLocaleString(),mx,col(c),"filterCond('"+esc(c)+"')")).join(''); }
+    document.getElementById('condBars').innerHTML=html;
+  });
+  groupCount("RECOTREA").then(rows=>{
+    rows=rows.filter(r=>r.k).sort((a,b)=>b.n-a.n);
+    const total=rows.reduce((s,r)=>s+r.n,0)||1;    // filtered total → percentages total 100%
+    const mx=Math.max(1,...rows.map(r=>r.n));
+    const tc=k=>/Immediate/.test(k)?cssv('--dead'):/High/.test(k)?cssv('--dec'):/Prun/.test(k)?cssv('--pot'):k==='No Treatment'?cssv('--good'):cssv('--gone');
+    document.getElementById('treatBars').innerHTML=rows.length?rows.map(r=>barPct(r.k,r.n,mx,total,tc(r.k),"filterTreat('"+esc(r.k)+"')")).join(''):'<div class="loading">No data.</div>';
+  });
+  groupCount("COMMON").then(rows=>{
+    rows=rows.filter(r=>r.k).sort((a,b)=>b.n-a.n);
+    const T=rows.reduce((s,r)=>s+r.n,0)||1;         // filtered total; each species' % is its share of the filter
+    const top=rows.slice(0,8); const mx=Math.max(1,...top.map(r=>r.n));
+    document.getElementById('spBars').innerHTML=top.length?top.map(r=>{
+      const p=pct(r.n,T);
+      return '<div class="bar wide click" onclick="filterSpecies(\''+esc(r.k)+'\')"><div class="lab" title="'+esc(r.k)+'">'+esc(r.k)+'</div><div class="track"><div class="fill" style="width:'+Math.max(3,r.n/mx*100)+'%;background:'+cssv('--brand')+'"></div></div><div class="val">'+r.n.toLocaleString()+' \u00b7 '+p+'%</div></div>';
+    }).join(''):'<div class="loading">No data.</div>';
+  });
+  const classes=[['Young (<15cm)',"DBH < 15"],['Establishing (15-40)',"DBH >= 15 AND DBH < 40"],['Mature (40-70)',"DBH >= 40 AND DBH < 70"],['Legacy (70cm+)',"DBH >= 70"]];
+  Promise.all(classes.map(c=>count(c[1]))).then(vals=>{
+    const mx=Math.max(1,...vals);const cols=['#7CB342','#3FA45B','#2C7A54','#215E41'];
+    document.getElementById('dbhBars').innerHTML=classes.map((c,i)=>bar(c[0],vals[i],mx,cols[i],"filterWhere('"+c[0]+"','"+c[1]+"')")).join('');
+  });
+  const concernWhere="RECOTREA LIKE '%Immediate%' OR RECOTREA LIKE '%High Priority%' OR OVERHEAL IN ('Dead','Death imminent')";
+  stats.queryFeatures(withGeom({where:AND(concernWhere,curWhere()),outFields:["TREENUM_NEW","COMMON","OVERHEAL","SITELOCA","DBH","RECOTREA"],returnGeometry:true,num:2000,orderByFields:["DBH DESC"]})).then(res=>{
+    const box=document.getElementById('concerns');
+    if(!res.features.length){box.innerHTML='<div class="loading">None flagged - canopy looks healthy.</div>';return;}
+    window._concerns=res.features;
+    const rows=res.features.map((f,i)=>{const a=f.attributes;const urgent=/Immediate/.test(a.RECOTREA||'');
+      return '<div class="concern" onclick="zoomConcern('+i+')"><div class="sp" style="background:'+col(a.OVERHEAL)+'"></div><div class="who"><div class="n">'+esc(a.COMMON||'Tree')+' '+(a.TREENUM_NEW?('#'+a.TREENUM_NEW):'')+'</div><div class="m">'+esc(a.OVERHEAL||'')+' &middot; '+esc(a.SITELOCA||'')+' &middot; '+(a.DBH!=null?a.DBH+'cm':'')+'</div></div><div class="tag '+(urgent?'rem':'pri')+'">'+(urgent?'Immediate':'Priority')+'</div></div>';
+    }).join('');
+    box.innerHTML='<div class="concerncount" id="concernCount">'+res.features.length+' flagged \u2014 scroll for all</div><div class="concernscroll">'+rows+'</div>';
+    countW(AND(concernWhere,curWhere())).then(tot=>{ const el=document.getElementById('concernCount'); if(el&&tot>res.features.length) el.textContent=res.features.length+' shown of '+tot+' flagged'; else if(el) el.textContent=tot+' flagged \u2014 scroll for all'; });
+  }).catch(()=>document.getElementById('concerns').innerHTML='<div class="loading">Could not load.</div>');
+  loadPests();
+  const t=new Date().toISOString().slice(0,10);
+  Promise.all([countW("CreationDate >= DATE '"+t+"'"), countW("EditDate >= DATE '"+t+"' AND CreationDate < DATE '"+t+"'"), insp.queryFeatureCount({where:"CreationDate >= DATE '"+t+"'"}).catch(()=>null)]).then(([a,e,l])=>{
+    const box=document.getElementById('dayBars');
+    if(a==null&&e==null&&l==null){box.innerHTML='<div class="cap" style="margin:0">Today activity needs editor tracking on the service.</div>';return;}
+    const mx=Math.max(1,a||0,e||0,l||0);
+    box.innerHTML='<div class="cap" style="margin:0 0 8px">Today &middot; added / edited / logged</div>'+bar('Added',a||0,mx,cssv('--good'))+bar('Edited',e||0,mx,cssv('--pot'))+bar('Logged',l||0,mx,cssv('--amber'));
+  });
+}
+
+// scan the whole inventory for every pest/disease present, list them, make each map-able
+function loadPests(){
+  // EAB highlight (Ontario priority)
+  Promise.all([count("COMMON LIKE '%Ash%'"), count("COMMON LIKE '%Ash%' AND PESTDISEAS LIKE '%EAB%'")]).then(([ash,eab])=>{
+    document.getElementById('eabN').textContent=eab;
+    document.getElementById('eabTrees').textContent=eab+' ash tree'+(eab===1?'':'s');
+    document.getElementById('eabPct').textContent=ash?pct(eab,ash)+'% of ash inventory affected.':'';
+  });
+  groupCount("PESTDISEAS").then(rows=>{
+    rows=rows.filter(r=>r.k&&!/^none/i.test(String(r.k))&&String(r.k).trim()!=='').sort((a,b)=>b.n-a.n);
+    const box=document.getElementById('pestBars');
+    if(!rows.length){box.innerHTML='<div class="loading">No pests or diseases recorded in this range.</div>';return;}
+    const mx=Math.max(1,...rows.map(r=>r.n));
+    const pc=k=>/EAB/i.test(k)?cssv('--dead'):/blight|canker|fungus|fungal|rot|decay|rust|wilt|disease|bacterial/i.test(k)?cssv('--dec'):cssv('--pot');
+    box.innerHTML=rows.map(r=>bar(r.k,r.n,mx,pc(r.k),"filterPest('"+esc(r.k)+"')")).join('');
+  });
+}
+
+function loadDiversity(){
+  Promise.all([groupCount("COMMON"),groupCount("GENERA"),groupCount("FAMILY")]).then(([sp,ge,fa])=>{
+    const top=rows=>{rows=rows.filter(r=>r.k);rows.sort((a,b)=>b.n-a.n);return rows[0]||{k:'-',n:0};};
+    const T=sp.reduce((s,r)=>s+r.n,0)||1;   // filtered total for 10-20-30 percentages
+    const rows=[
+      {lab:'Top species',v:top(sp),lim:10,c:cssv('--good')},
+      {lab:'Top genus',v:top(ge),lim:20,c:cssv('--sat')},
+      {lab:'Top family',v:top(fa),lim:30,c:cssv('--brand')}
+    ];
+    document.getElementById('diversity').innerHTML=rows.map(r=>{
+      const p=pct(r.v.n,T); const over=p>r.lim; const w=Math.min(100,p/(r.lim*1.6)*100);
+      return '<div class="rulerow"><div class="top"><span>'+r.lab+': <b>'+esc(r.v.k)+'</b></span><span class="pctn" style="color:'+(over?cssv('--dec'):'var(--text)')+'">'+p+'% <span style="color:var(--muted)">/ '+r.lim+'% max</span></span></div>'+
+      '<div class="track"><div class="fill" style="width:'+Math.max(3,w)+'%;background:'+(over?cssv('--dec'):r.c)+'"></div><div class="thresh" style="left:'+(100/1.6)+'%"></div></div>'+
+      '<div class="msg '+(over?'bad':'')+'">'+(over?('Over the '+r.lim+'% guideline - over-reliance risk.'):('Within the '+r.lim+'% guideline.'))+'</div></div>';
+    }).join('');
+  });
+}
+
+function zoomConcern(i){
+  const f=window._concerns&&window._concerns[i]; if(!f||!f.geometry)return;
+  viewRef.goTo({target:f.geometry,zoom:19}).catch(()=>{});
+  viewRef.openPopup({features:[f],location:f.geometry});
+  scrollMap();
+}
+
+/* ---- canopy analytics: DBH histogram, canopy cover, benefit estimates ---- */
+const BEN=[
+  {id:'co2', label:'Carbon dioxide sequestered', sub:'CO\u2082 removed from the air each year', unit:'kg', rate:0.9},
+  {id:'sw',  label:'Stormwater intercepted',     sub:'Rainfall caught by the canopy',          unit:'L',  rate:25},
+  {id:'air', label:'Air pollutants removed',      sub:'PM, O\u2083, NO\u2082 and similar filtered', unit:'g', rate:3}
+];
+let canopyM2=0;
+function histSVG(bins,total){
+  const NB=bins.length, W=700,H=290, mL=48,mR=48,mT=12,mB=34;
+  const pw=W-mL-mR, ph=H-mT-mB, barW=pw/NB;
+  const maxCount=Math.max(1,...bins);
+  const sat=cssv('--sat'), amber=cssv('--amber'), muted=cssv('--muted'), line=cssv('--line');
+  let s='<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block;font-family:var(--mono);font-size:9px">';
+  for(let t=0;t<=4;t++){ const y=mT+ph-(t/4)*ph;
+    s+='<line x1="'+mL+'" y1="'+y+'" x2="'+(W-mR)+'" y2="'+y+'" stroke="'+line+'" stroke-width="0.5"/>';
+    s+='<text x="'+(mL-6)+'" y="'+(y+3)+'" text-anchor="end" fill="'+muted+'">'+Math.round(maxCount*t/4).toLocaleString()+'</text>';
+    s+='<text x="'+(W-mR+6)+'" y="'+(y+3)+'" text-anchor="start" fill="'+amber+'">'+(t*25)+'%</text>';
+  }
+  for(let i=0;i<NB;i++){ const bh=bins[i]/maxCount*ph; const x=mL+i*barW; const y=mT+ph-bh;
+    const rng=(i===NB-1)?'100+ cm':(i*5)+'\u2013'+(i*5+5)+' cm';
+    s+='<rect x="'+(x+1).toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+(barW-2).toFixed(1)+'" height="'+Math.max(0,bh).toFixed(1)+'" fill="'+sat+'" opacity="0.9"><title>'+rng+': '+bins[i]+' trees</title></rect>';
+  }
+  for(let i=0;i<NB;i+=4){ const x=mL+i*barW+barW/2; s+='<text x="'+x.toFixed(1)+'" y="'+(H-mB+14)+'" text-anchor="middle" fill="'+muted+'">'+(i===NB-1?'100+':i*5)+'</text>'; }
+  // cumulative ogive: % of trees with DBH below each bin's upper edge
+  let cum=0; const pts=[[mL, mT+ph, 0]];
+  for(let i=0;i<NB;i++){ cum+=bins[i]; const cp=total?cum/total*100:0; pts.push([mL+(i+1)*barW, mT+ph-(cp/100)*ph, cp, (i+1)*5]); }
+  s+='<polyline points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'" fill="none" stroke="'+amber+'" stroke-width="2"/>';
+  pts.forEach(p=>{ if(p.length>3) s+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.6" fill="'+amber+'"><title>'+Math.round(p[2])+'% of trees are below '+p[3]+' cm DBH</title></circle>'; });
+  s+='<text x="'+(mL+pw/2)+'" y="'+(H-4)+'" text-anchor="middle" fill="'+muted+'" font-size="9">Trunk diameter (DBH), cm</text>';
+  s+='</svg>';
+  return s;
+}
+function closeCanopy(){ document.getElementById('canopy').classList.remove('show'); }
+function openCanopy(){
+  document.getElementById('canopy').classList.add('show');
+  document.getElementById('histWrap').innerHTML='<div class="loading">Building histogram\u2026</div>';
+  document.getElementById('canopyStats').innerHTML='';
+  const W=curWhere();
+  const sub=document.getElementById('canopySub');
+  Promise.all([groupCountW("DBH",W),groupCountW("CROWNDIAM",W)]).then(([dbhRows,crownRows])=>{
+    const NB=21;               // 0-5,5-10,...,95-100,100+
+    const bins=new Array(NB).fill(0); let total=0,sumDbh=0,maxDbh=0;
+    dbhRows.forEach(r=>{ const d=parseFloat(r.k); if(isNaN(d))return; const idx=Math.min(NB-1,Math.floor(d/5)); bins[idx]+=r.n; total+=r.n; sumDbh+=d*r.n; if(d>maxDbh)maxDbh=d; });
+    const mx=Math.max(1,...bins);
+    document.getElementById('histWrap').innerHTML=histSVG(bins,total)
+      +'<div class="histlegend"><span><i class="sw" style="background:'+cssv('--sat')+'"></i>Number of trees (left axis)</span><span><i class="ln" style="background:'+cssv('--amber')+'"></i>Cumulative % of trees below (right axis)</span></div>';
+
+    // canopy cover from crown diameters (fall back to DBH-derived crown if CROWNDIAM is empty)
+    let canopyCrown=0,sumCrown=0,nCrown=0;
+    crownRows.forEach(r=>{ const c=parseFloat(r.k); if(!isNaN(c)&&c>0){ canopyCrown+=Math.PI*Math.pow(c/2,2)*r.n; sumCrown+=c*r.n; nCrown+=r.n; } });
+    let canopyDbh=0; dbhRows.forEach(r=>{ const d=parseFloat(r.k); if(!isNaN(d)&&d>0){ const c=1.68+0.202*d; canopyDbh+=Math.PI*Math.pow(c/2,2)*r.n; } });
+    const usedCrown=canopyCrown>0; canopyM2=usedCrown?canopyCrown:canopyDbh;
+    const meanDbh=total?sumDbh/total:0;
+    const avgCrown=nCrown?sumCrown/nCrown:(total?(1.68+0.202*meanDbh):0);
+    const ha=canopyM2/10000;
+    const tile=(n,l)=>'<div class="cstat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>';
+    document.getElementById('canopyStats').innerHTML=
+      tile(total.toLocaleString(),'Trees in range')+
+      tile(meanDbh.toFixed(1)+' cm','Mean DBH')+
+      tile(maxDbh+' cm','Largest DBH')+
+      tile(ha.toFixed(2)+' ha','Canopy cover'+(usedCrown?'':' (est. from DBH)'));
+    document.getElementById('canopySub').textContent='Canopy cover \u2248 '+Math.round(canopyM2).toLocaleString()+' m\u00b2 ('+ha.toFixed(2)+' ha) from '+total.toLocaleString()+' trees \u00b7 avg crown '+avgCrown.toFixed(1)+' m \u00b7 '+(currentFilter.id==='all'?'whole inventory':'filter: '+currentFilter.label)+', current date range.';
+    renderBenefits();
+  }).catch(()=>{ document.getElementById('histWrap').innerHTML='<div class="loading">Could not load diameter data.</div>'; });
+}
+function fmtBen(val,unit){
+  if(unit==='kg') return val>=1000?(val/1000).toFixed(1)+' t/yr':Math.round(val).toLocaleString()+' kg/yr';
+  if(unit==='L')  return val>=1000?(val/1000).toFixed(1)+' m\u00b3/yr':Math.round(val).toLocaleString()+' L/yr';
+  if(unit==='g')  return val>=1000?(val/1000).toFixed(1)+' kg/yr':Math.round(val).toLocaleString()+' g/yr';
+  return Math.round(val).toLocaleString();
+}
+function renderBenefits(){
+  document.getElementById('benefitRows').innerHTML=BEN.map(b=>'<div class="brow"><div class="bl"><b>'+b.label+'</b><div class="sub">'+b.sub+'</div></div><div class="rate">'+b.unit+'/m\u00b2/yr <input type="number" step="0.1" value="'+b.rate+'" oninput="setRate(\''+b.id+'\',this.value)"></div><div class="out" id="ben_'+b.id+'">\u2014</div></div>').join('');
+  BEN.forEach(updateBen);
+}
+function updateBen(b){ const el=document.getElementById('ben_'+b.id); if(el)el.textContent=fmtBen(canopyM2*b.rate,b.unit); }
+function setRate(id,v){ const b=BEN.find(x=>x.id===id); if(b){b.rate=parseFloat(v)||0; updateBen(b);} }
+document.getElementById('canopy').addEventListener('click',function(e){ if(e.target===this) closeCanopy(); });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeCanopy(); });
+</script>
+</body>
+</html>
