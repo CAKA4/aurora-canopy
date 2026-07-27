@@ -778,7 +778,12 @@ function openDomainPicker(id, dkey, title){
 }
 
 /* ------------- sheet ------------- */
-function openSheet(){document.getElementById('scrim').classList.add('show');document.getElementById('sheet').classList.add('up');}
+function openSheet(){
+  document.getElementById('scrim').classList.add('show');
+  const sh=document.getElementById('sheet'); sh.classList.add('up');
+  // always open at the very top (species/first field), not wherever the last form was scrolled
+  requestAnimationFrame(()=>{ const b=document.getElementById('shBody'); if(b)b.scrollTop=0; if(sh)sh.scrollTop=0; });
+}
 function closeSheet(){document.getElementById('scrim').classList.remove('show');document.getElementById('sheet').classList.remove('up');selectedGraphic=null;if(provisional){clearProvisional();if(addMode)toggleAdd();}}
 function setHead(e,t,s,c){document.getElementById('shEyebrow').textContent=e;document.getElementById('shTitle').textContent=t;document.getElementById('shSub').textContent=s||'';document.getElementById('shSpine').style.background=c||'#7A868E';}
 
@@ -1099,11 +1104,26 @@ function openEditTree(){
 }
 function deleteTree(){
   const g=selectedGraphic; if(!g)return;
-  confirmDialog('Delete this tree?','This permanently removes the tree and its logs from the layer. This cannot be undone.','Delete tree',()=>{
-    treeLayer.applyEdits({deleteFeatures:[g]}).then(r=>{
-      if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
-      treeLayer.refresh(); treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
-      toast('Tree deleted','ok'); closeSheet();
+  const gid=g.attributes.GlobalID;
+  confirmDialog('Delete this tree?','This permanently removes the tree AND all of its activity-log records. This cannot be undone.','Delete tree',()=>{
+    // 1) find and delete the related inspection records first, so none are left orphaned
+    const findLogs = gid
+      ? inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}'`, outFields:[inspLayer.objectIdField], returnGeometry:false})
+          .then(res=>res.features.map(f=>({objectId:f.attributes[inspLayer.objectIdField]})))
+          .catch(()=>[])
+      : Promise.resolve([]);
+    findLogs.then(logDels=>{
+      const step = logDels.length
+        ? inspLayer.applyEdits({deleteFeatures:logDels}).catch(()=>{})   // best-effort; don't block the tree delete
+        : Promise.resolve();
+      return step.then(()=>logDels.length);
+    }).then(nLogs=>{
+      // 2) delete the tree point itself
+      return treeLayer.applyEdits({deleteFeatures:[g]}).then(r=>{
+        if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
+        treeLayer.refresh(); treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
+        toast(nLogs? ('Tree and '+nLogs+' log record(s) deleted') : 'Tree deleted','ok'); closeSheet();
+      });
     }).catch(err=>toast('Delete failed: '+(err.message||err),'err'));
   });
 }
@@ -1162,7 +1182,7 @@ function saveTree(){
 
 /* ------------- NEW tree ------------- */
 function openNewTree(pt){
-  derived={};
+  derived={}; newPhotoFile=null;
   setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
   document.getElementById('shBody').innerHTML=`
     <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="${esc(recentSpecies[0]||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
@@ -1176,6 +1196,7 @@ function openNewTree(pt){
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
     <div class="field"><label>Comments</label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
+    <div class="field"><label>Photo</label><label class="photo" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="n_photolabel">Tap to capture / attach photo</div></label></div>
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
   openSheet();
@@ -1204,7 +1225,9 @@ function saveNewTree(){
   treeLayer.applyEdits({addFeatures:[g]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     clearProvisional(); if(addMode)toggleAdd(); treeLayer.refresh(); bumpDay('add');
-    return treeLayer.queryFeatures({objectIds:[res.objectId], outFields:["*"]});
+    const _np=newPhotoFile; window._newTreeOid=res.objectId;
+    const attach = _np ? addTreePhotoFrom('n_photo', res.objectId, _np).catch(()=>{}) : Promise.resolve();
+    return attach.then(()=> treeLayer.queryFeatures({objectIds:[res.objectId], outFields:["*"]}));
   }).then(q=>{
     const ng=q.features[0]; treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
     toast('Tree created — log its first activity','ok'); openInspection(ng,'Inspection');
@@ -1213,7 +1236,7 @@ function saveNewTree(){
 }
 
 /* ------------- INSPECTION ------------- */
-let photoFile=null, editingInsp=null, resyncSnapshot=false;
+let photoFile=null, editingInsp=null, resyncSnapshot=false, newPhotoFile=null;
 function resyncFromTree(){
   const a=selectedGraphic&&selectedGraphic.attributes; if(!a)return;
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=dval(v);};
@@ -1233,6 +1256,8 @@ function openInspection(g,preset,editRec){
     <div class="frow"><div class="field"><label>Inspector</label><input id="i_inspector" list="inspectors" value="${esc(editRec?(R.inspector_name||''):(currentInspector||''))}" placeholder="Name or initials"><datalist id="inspectors">${Object.keys(DOMAINS.inspector_name||{}).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div><div class="field"><label>Date</label><input type="date" id="i_date" value="${editRec?esc(fmtDateInput(logDate(R))):today()}"></div></div>
     <div class="grp-snapnote treenote hide">🔒 <b>Condition &amp; defects are pulled from the tree record.</b> To change them, go Back → <b>Edit tree</b> first, then log the inspection.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
     <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
+    <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
+    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to capture / attach photo</div></label></div>
     <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
     <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
       <div class="frow"><div class="field"><label>Structural</label><div class="locked" id="lk_struct">${esc(dval(editRec?R.Structdefe_at_inspection:a.STRUDEFE))}</div></div><div class="field"><label>Wound / canker</label><div class="locked" id="lk_wound">${esc(dval(editRec?R.Woundcank_at_inspection:a.WOUNCANK))}</div></div></div>
@@ -1242,8 +1267,6 @@ function openInspection(g,preset,editRec){
     <div class="field grp-dbh hide"><label>DBH (cm) · from tree</label><div class="locked" id="lk_dbh">${esc(dval(editRec?R.DBH:a.DBH))}</div></div>
     <div class="field grp-removal hide"><label>Removal reason</label><select id="i_removal">${options('Removal_reason',editRec?R.Removal_reason:'',true)}</select></div>
     <div class="field grp-recommend hide"><label>Recommended treatment · from tree</label><div class="locked" id="lk_rec">${esc(dval(editRec?R.recommendations:a.RECOTREA))}</div></div>
-    <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to capture / attach photo</div></label></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn primary" id="i_submit" onclick="submitInspection()">${editRec?'Save changes':'Save log'}</button></div>`;
   applyActivity(); openSheet();
 }
@@ -1254,6 +1277,16 @@ function applyActivity(){
   show('.grp-recommend',gr.includes('recommend'));show('.grp-removal',gr.includes('removal'));show('.grp-species',gr.includes('species'));
   show('.grp-snapnote', act==='Inspection'||act==='Planted');
   const b=document.getElementById('i_submit');if(b)b.textContent=act==='Removed'?'Submit removal':act==='Planted'?'Submit planting':'Save log';
+}
+function onNewPhoto(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  newPhotoFile=f;
+  const w=document.getElementById('n_photowrap'); w.classList.add('has');
+  let prev=document.getElementById('n_photoprev');
+  if(!prev){ prev=document.createElement('div'); prev.id='n_photoprev'; w.appendChild(prev); }
+  const r=new FileReader();
+  r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · attached</div>`; };
+  r.readAsDataURL(f);
 }
 function onPhoto(ev){
   const f=ev.target.files&&ev.target.files[0]; if(!f)return;
@@ -1353,6 +1386,8 @@ function addPhotoTo(layer, oid, file){
 function addPhoto(oid, file){ return addPhotoTo(inspLayer, oid, file); }
 // tree-point attachment — mirrors the ArcGIS Field Maps behaviour of putting the photo on the tree too
 function addTreePhoto(treeOid, file){ return addPhotoTo(treeLayer, treeOid, file); }
+// attach to the tree from a named live input if present, else from the stored File
+function addTreePhotoFrom(inputId, treeOid, file){ return addPhotoTo(treeLayer, treeOid, file); }
 
 /* ------------- offline buffer (IndexedDB) ------------- */
 const Buffer={
