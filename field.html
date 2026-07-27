@@ -68,6 +68,7 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .fab.add{background:var(--brand);color:#fff}
 .fab.add.arming{background:var(--amber);color:#20160a}
 .fab.loc{background:var(--panel);color:var(--text);border:1px solid var(--line);width:52px;padding:0;justify-content:center}
+.fab.loc.following{color:#3FA45B;border-color:#3FA45B}
 .fab:active{transform:translateY(1px)}
 
 /* arming banner */
@@ -158,13 +159,13 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .lyrline:last-child{border-bottom:none}
 .lyrline input{width:20px;height:20px;margin:0}
 #picker.show{display:flex}
-.pickbox{background:var(--panel,#18212A);border-top-left-radius:18px;border-top-right-radius:18px;max-height:78vh;display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
-.pickhead{display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
+.pickbox{background:var(--panel,#18212A);border-top-left-radius:18px;border-top-right-radius:18px;max-height:78vh;max-height:calc(var(--vvh, 78vh) - 12px);display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
+.pickhead{flex:none;display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
 .pickhead #pickTitle{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);flex:1}
 .pickhead .done{background:var(--brand);color:#fff;border:none;border-radius:10px;font-family:inherit;font-weight:700;font-size:14px;padding:8px 15px;cursor:pointer}
-.picksearchwrap{padding:0 14px 10px}
+.picksearchwrap{flex:none;padding:0 14px 10px}
 #pickSearch{width:100%;background:var(--field);border:1px solid var(--field-edge);border-radius:11px;color:#0E0E0E;font-family:var(--sans);font-size:16px;font-weight:500;padding:12px}
-#pickList{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 8px 16px}
+#pickList{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 8px 16px}
 .pickitem{padding:14px 14px;border-radius:10px;font-size:16px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--line)}
 .pickitem:active{background:var(--panel2)}
 .pickitem.add{color:var(--amber);font-weight:600}
@@ -360,14 +361,14 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <div id="pickList"></div>
   </div>
 </div>
-<div id="arm"><span>Line up the crosshair, then place</span><button id="armCenter" onclick="placeAtCenter()">✛ Place here</button><button id="armGps" onclick="placeAtGps()">📍 GPS</button></div>
+<div id="arm"><span>Placed at your location — drag map to adjust</span><button id="armCenter" onclick="placeAtCenter()">✛ Here</button><button id="armGps" onclick="placeAtGps()">📍 GPS</button></div>
 
 <div id="fabs">
   <button class="fab add" id="fabAdd" onclick="toggleAdd()">
     <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
     <span id="addLbl">Add tree</span>
   </button>
-  <button class="fab loc" onclick="locate()" title="Use my location">
+  <button class="fab loc following" id="fabLoc" onclick="locate()" title="Use my location">
     <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.4" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
   </button>
 </div>
@@ -460,6 +461,7 @@ function pickDateTypeField(fields){
 let taxoLayer=null, esriRequest=null, projection=null, SpatialRef=null, FeatureLayerC=null, parksLayer=null, PolylineC=null;
 let highlightLayer=null, highlightWhere="DATE_NEW < DATE '2023-01-01'";
 let geometryEngine=null, gpsWatch=null, gpsGraphic=null, gpsRing=null, lastGps=null;
+let followGps=true, _userPanned=false;   // map auto-centers on GPS until the user pans
 let derived={};   // auto-computed field values for the tree currently being added/edited
 let currentInspector='', idPick='';
 let addMode=false, provisional=null, selectedGraphic=null;
@@ -567,6 +569,9 @@ require([
       else { treeLayer.when(()=>{ if(treeLayer.fullExtent) view.goTo(treeLayer.fullExtent).catch(()=>{}); }); }
       showIdentity();
       loadTaxonomy();
+      startTracking();                                   // begin following the user's GPS
+      // stop auto-following the moment the user drags the map; a two-finger pan counts too
+      view.on("drag", ()=>{ if(followGps){ followGps=false; const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following'); } });
     });
 
     view.on("click",(e)=>{
@@ -709,7 +714,18 @@ function dbhList(){
   return usedKeys.concat(rest);
 }
 let pickState=null;
+// keep the picker sized to the visible area (above the keyboard) using the visual viewport
+function _syncPickerVH(){
+  var vv=window.visualViewport;
+  var hpx=vv?vv.height:window.innerHeight;
+  document.documentElement.style.setProperty('--vvh', hpx+'px');
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', _syncPickerVH);
+  window.visualViewport.addEventListener('scroll', _syncPickerVH);
+}
 function openPicker(cfg){
+  _syncPickerVH();
   pickState=cfg;
   document.getElementById('pickTitle').textContent=cfg.title;
   const s=document.getElementById('pickSearch');
@@ -764,9 +780,24 @@ function setHead(e,t,s,c){document.getElementById('shEyebrow').textContent=e;doc
 function cycleBase(){basemapToggleIdx=(basemapToggleIdx+1)%BASES.length;map.basemap=BASES[basemapToggleIdx];document.getElementById('btnBase').firstChild.textContent=['SAT','MAP','TOP'][basemapToggleIdx];document.getElementById('baseLbl').textContent=BASELBL[basemapToggleIdx];}
 
 /* ------------- add-tree ------------- */
-function toggleAdd(){addMode=!addMode;const f=document.getElementById('fabAdd');f.classList.toggle('arming',addMode);document.getElementById('addLbl').textContent=addMode?'Cancel':'Add tree';document.getElementById('arm').classList.toggle('show',addMode);document.getElementById('xhair').classList.toggle('show',addMode);if(!addMode)clearProvisional();}
+function toggleAdd(){
+  addMode=!addMode;
+  const f=document.getElementById('fabAdd');
+  f.classList.toggle('arming',addMode);
+  document.getElementById('addLbl').textContent=addMode?'Cancel':'Add tree';
+  document.getElementById('arm').classList.toggle('show',addMode);
+  document.getElementById('xhair').classList.toggle('show',addMode);
+  if(addMode){
+    // drop the point at the current centre straight away (= GPS position while following)
+    followGps=false;                                   // freeze the map so it doesn't drift under the point
+    const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following');
+    if(view && view.center){ const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
+  } else {
+    clearProvisional();
+  }
+}
 function clearProvisional(){if(provisional){view.graphics.remove(provisional);provisional=null;}}
-function placeProvisional(pt){clearProvisional();const xh=document.getElementById('xhair');if(xh)xh.classList.remove('show');provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:14,outline:{color:"#fff",width:2}}});view.graphics.add(provisional);openNewTree(pt);}
+function placeProvisional(pt){clearProvisional();provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:14,outline:{color:"#fff",width:2}}});view.graphics.add(provisional);openNewTree(pt);}
 function placeAtCenter(){ if(!view||!view.center)return; const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
 /* nearest-parcel address lookup (mirrors the Field Maps parcel logic) */
 function lookupAddress(point){
@@ -864,15 +895,9 @@ function nextTreeNum(){
     .then(r=>{const mx=r.features.length?r.features[0].attributes.mx:0;return (mx||0)+1;}).catch(()=>null);
 }
 function renderAuto(){
-  const el=document.getElementById('autoPanel'); if(!el)return;
-  const row=(k,v)=>`<div class="attr"><div class="k">${k}</div><div class="v">${v==null||v===''?'—':esc(v)}</div></div>`;
-  el.innerHTML=`<div class="slabel">Auto-filled</div><div class="attrs">
-    ${row('Species',derived.SPECIES2)}${row('Family',derived.FAMILY)}
-    ${row('Height (m)',derived.HEIGHT)}${row('Crown Ø (m)',derived.CROWNDIAM)}
-    ${row('Age class',derived.AGECLASS)}${row('Grid page',derived.GRID)}
-    ${derived.TREENUM_NEW!=null?row('Tree #',derived.TREENUM_NEW):''}${row('UTM X / Y',derived.X!=null?(derived.X+' / '+derived.Y):null)}
-    ${row('Park',derived.PARKNAM)}${row('Street',derived.STREET)}${row('Dist. to road (m)',derived.ROADDIST)}
-  </div>`;
+  // Auto-filled values are computed and saved, but intentionally NOT shown in the form —
+  // hiding them keeps the whole form on one screen and reduces scrolling for field crews.
+  const el=document.getElementById('autoPanel'); if(el) el.innerHTML='';
 }
 function autoOnDbh(id){ Object.assign(derived, dbhDerived(gv(id))); renderAuto(); }
 function autoOnSpecies(id){ taxoLookup(gv(id)).then(t=>{Object.assign(derived,t); renderAuto();}); }
@@ -882,7 +907,9 @@ function startTracking(){
   if(!navigator.geolocation){toast('Location not available on this device','warn');return false;}
   if(gpsWatch!=null) return true;
   gpsWatch=navigator.geolocation.watchPosition(
-    p=>{ lastGps=p.coords; drawGps(new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude}), p.coords.accuracy); },
+    p=>{ lastGps=p.coords; const pt=new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude});
+         drawGps(pt, p.coords.accuracy);
+         if(followGps && view && !addMode){ view.goTo({target:pt}, {duration:250, easing:"ease-out"}).catch(()=>{}); } },
     e=>{ if(e&&e.code===1) toast('Location blocked — enable it in browser settings','warn'); },
     {enableHighAccuracy:true, maximumAge:2000, timeout:12000});
   return true;
@@ -902,6 +929,8 @@ function drawGps(pt, acc){
 }
 function locate(){
   if(!startTracking()) return;
+  followGps=true; _userPanned=false;              // resume auto-follow
+  const lb=document.getElementById('fabLoc'); if(lb) lb.classList.add('following');
   toast('Locating…');
   navigator.geolocation.getCurrentPosition(p=>{
     lastGps=p.coords;
@@ -1428,14 +1457,12 @@ function openRecords(){
         <div class="attr"><div class="k">Buffered</div><div class="v" style="color:${q?cssv('--amber'):''}">${q}</div></div>
         <div class="attr"><div class="k">Network</div><div class="v">${navigator.onLine?'online':'offline'}</div></div>
       </div>
-      <div class="note">Every inspection is one row in <b>treeinspections</b> with <b>${CONFIG.fkField}</b> = the tree's GlobalID — written live to your hosted service via <b>applyEdits</b>. Photos attach via <b>addAttachment</b>. Offline edits are held in this device's buffer and flush automatically on reconnect.</div>
+      <div class="note">Offline edits are held safely on this device and flush automatically when you reconnect.</div>
       ${q?`<div class="actions"><button class="btn primary" onclick="flushQueue();closeSheet()">Sync ${q} now</button></div>`:''}
       <div class="slabel">Management</div>
-      <div class="note">Open the <b><a href="/" style="color:var(--good)">management dashboard</a></b> for inventory-wide statistics, reporting and review tools.</div>
-      <div class="slabel">Deliverable</div>
-      <div class="note">The Town gets a geodatabase straight from ArcGIS Online: the layer's item page → <b>Export Data → File Geodatabase</b> includes attachments, anytime — no pipeline needed.</div>
+      <div class="actions"><button class="btn brand" style="width:100%" onclick="location.href='/'">Open management dashboard</button></div>
       <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:16px;padding-top:12px;border-top:1px solid var(--line);line-height:1.5">&copy; 2026 Silv-Econ Ltd. All rights reserved.<br>Proprietary and confidential — not for redistribution or reuse without written permission.</div>
-      <div class="actions"><button class="btn brand" onclick="closeSheet()">Done</button></div>`;
+      <div class="actions"><button class="btn ghost" style="width:100%" onclick="closeSheet()">Done</button></div>`;
     openSheet();
   });
 }
