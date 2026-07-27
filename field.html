@@ -81,6 +81,8 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
   border:2px solid rgba(255,221,84,.95);border-radius:50%;pointer-events:none;display:none;
   box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 0 1px rgba(0,0,0,.35)}
 #xhair.show{display:block}
+#xhair::marker{}
+#xhair .dot{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;background:rgba(255,221,84,1);border:1px solid rgba(0,0,0,.6);border-radius:50%}
 #xhair::before,#xhair::after{content:"";position:absolute;background:rgba(255,221,84,.95);box-shadow:0 0 0 1px rgba(0,0,0,.4)}
 #xhair::before{left:50%;top:-11px;bottom:-11px;width:2px;transform:translateX(-50%)}
 #xhair::after{top:50%;left:-11px;right:-11px;height:2px;transform:translateY(-50%)}
@@ -152,14 +154,14 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
   background-repeat:no-repeat;background-position:right 12px center}
 /* custom searchable picker (reliable on iOS, unlike datalist) */
-#picker{position:fixed;inset:0;z-index:3000;background:rgba(6,9,12,.55);display:none;flex-direction:column;justify-content:flex-end}
+#picker{position:fixed;inset:0;z-index:3000;background:rgba(6,9,12,.55);display:none;flex-direction:column;justify-content:flex-start}
 .pick{position:fixed;inset:0;z-index:3000;background:rgba(6,9,12,.55);display:none;flex-direction:column;justify-content:flex-end}
 .pick.show{display:flex}
 .lyrline{display:flex;align-items:center;gap:11px;font-size:15px;color:var(--text);padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer}
 .lyrline:last-child{border-bottom:none}
 .lyrline input{width:20px;height:20px;margin:0}
 #picker.show{display:flex}
-.pickbox{background:var(--panel,#18212A);border-top-left-radius:18px;border-top-right-radius:18px;max-height:78vh;max-height:calc(var(--vvh, 78vh) - 12px);display:flex;flex-direction:column;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
+.pickbox{background:var(--panel,#18212A);border-bottom-left-radius:18px;border-bottom-right-radius:18px;height:calc(var(--vvh, 88vh) - 8px);max-height:calc(var(--vvh, 88vh) - 8px);display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.5);padding-top:env(safe-area-inset-top)}
 .pickhead{flex:none;display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
 .pickhead #pickTitle{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);flex:1}
 .pickhead .done{background:var(--brand);color:#fff;border:none;border-radius:10px;font-family:inherit;font-weight:700;font-size:14px;padding:8px 15px;cursor:pointer}
@@ -353,7 +355,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
   </div>
 </div>
 
-<div id="xhair"></div>
+<div id="xhair"><span class="dot"></span></div>
 <div id="picker">
   <div class="pickbox">
     <div class="pickhead"><span id="pickTitle">Choose</span><button class="done" onclick="pickClose()">Done</button></div>
@@ -361,7 +363,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <div id="pickList"></div>
   </div>
 </div>
-<div id="arm"><span>Placed at your location — drag map to adjust</span><button id="armCenter" onclick="placeAtCenter()">✛ Here</button><button id="armGps" onclick="placeAtGps()">📍 GPS</button></div>
+<div id="arm"><span>Drag map to line up the crosshair</span><button id="armCenter" onclick="placeAtCenter()">✛ Place here</button><button id="armGps" onclick="placeAtGps()">📍 GPS</button></div>
 
 <div id="fabs">
   <button class="fab add" id="fabAdd" onclick="toggleAdd()">
@@ -786,18 +788,20 @@ function toggleAdd(){
   f.classList.toggle('arming',addMode);
   document.getElementById('addLbl').textContent=addMode?'Cancel':'Add tree';
   document.getElementById('arm').classList.toggle('show',addMode);
-  document.getElementById('xhair').classList.toggle('show',addMode);
+  document.getElementById('xhair').classList.toggle('show',addMode);   // crosshair marks the exact spot
   if(addMode){
-    // drop the point at the current centre straight away (= GPS position while following)
-    followGps=false;                                   // freeze the map so it doesn't drift under the point
+    // Aim by dragging the map under the fixed centre crosshair. Start centred on the GPS
+    // position if we have one, so the common case ("plant a tree where I'm standing") needs no panning.
+    if(lastGps){ view.goTo({target:new PointC({latitude:lastGps.latitude,longitude:lastGps.longitude}), zoom:Math.max(view.zoom,19)}).catch(()=>{}); }
+    followGps=false;                                    // the crosshair, not the map, now marks the spot
     const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following');
-    if(view && view.center){ const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
   } else {
     clearProvisional();
   }
 }
 function clearProvisional(){if(provisional){view.graphics.remove(provisional);provisional=null;}}
-function placeProvisional(pt){clearProvisional();provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:14,outline:{color:"#fff",width:2}}});view.graphics.add(provisional);openNewTree(pt);}
+// confirm placement at whatever the crosshair (map centre) is currently over, then open the form
+function placeProvisional(pt){clearProvisional();const xh=document.getElementById('xhair');if(xh)xh.classList.remove('show');document.getElementById('arm').classList.remove('show');provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:14,outline:{color:"#fff",width:2}}});view.graphics.add(provisional);openNewTree(pt);}
 function placeAtCenter(){ if(!view||!view.center)return; const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
 /* nearest-parcel address lookup (mirrors the Field Maps parcel logic) */
 function lookupAddress(point){
