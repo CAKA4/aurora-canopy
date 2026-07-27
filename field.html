@@ -146,6 +146,10 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .field input,.field select,.field textarea{width:100%;background:var(--field);border:1px solid var(--field-edge);
   border-radius:11px;color:#0E0E0E;font-family:var(--sans);font-size:16px;font-weight:500;padding:12px 12px;appearance:none}
 .field input::placeholder,.field textarea::placeholder{color:#6b5d15}
+/* a field the user has modified turns pink, so edited attributes are easy to spot */
+.field input.changed,.field select.changed,.field textarea.changed{background:#FBB6CE;border-color:#E86FA0}
+.field input.changed::placeholder,.field textarea.changed::placeholder{color:#8a3a5c}
+.field select.changed{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>")}
 .field textarea{min-height:74px;resize:vertical;line-height:1.4}
 .field select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
   background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
@@ -750,8 +754,8 @@ function renderPickList(){
 }
 function pickChoose(v){ const st=pickState; pickClose(); if(st&&st.onPick)st.onPick(v); }
 function pickClose(){ document.getElementById('picker').classList.remove('show'); pickState=null; }
-function openSpeciesPicker(id){ openPicker({title:'Species — common name', items:speciesList(), value:gv(id), allowFree:true, onPick:v=>{ const el=document.getElementById(id); if(el)el.value=v; autoOnSpecies(id); }}); }
-function openDbhPicker(id){ openPicker({title:'DBH (cm)', items:dbhList(), value:gv(id), allowFree:true, numeric:true, onPick:v=>{ const el=document.getElementById(id); if(el)el.value=v; autoOnDbh(id); }}); }
+function openSpeciesPicker(id){ openPicker({title:'Species — common name', items:speciesList(), value:gv(id), allowFree:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnSpecies(id); }}); }
+function openDbhPicker(id){ openPicker({title:'DBH (cm)', items:dbhList(), value:gv(id), allowFree:true, numeric:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnDbh(id); }}); }
 (function(){ const l=document.getElementById('pickList'); if(l) l.addEventListener('click',e=>{ const it=e.target.closest('.pickitem'); if(it) pickChoose(it.dataset.val); });
   const p=document.getElementById('picker'); if(p) p.addEventListener('click',e=>{ if(e.target.id==='picker') pickClose(); }); })();
 function gv(id){const el=document.getElementById(id);return el?el.value:'';}
@@ -769,7 +773,7 @@ function openDomainPicker(id, dkey, title){
   const curLabel=(d[curCode]!=null?d[curCode]:curCode);
   openPicker({title:title, items:labels, value:curLabel, allowFree:true, onPick:v=>{
     const code=(label2code[v]!=null?label2code[v]:v);   // known label → its code; a typed value is stored as-is
-    if(el){ el.value=v; el.setAttribute('data-val', code); }
+    if(el){ el.value=v; el.setAttribute('data-val', code); markChanged(el); }
   }});
 }
 
@@ -903,6 +907,14 @@ function renderAuto(){
   // hiding them keeps the whole form on one screen and reduces scrolling for field crews.
   const el=document.getElementById('autoPanel'); if(el) el.innerHTML='';
 }
+// mark a form cell as user-modified (turns it pink) -------------------------------------------
+function markChanged(id){ const el=(typeof id==='string')?document.getElementById(id):id; if(el) el.classList.add('changed'); }
+function clearChanged(scope){ (scope||document).querySelectorAll('.field .changed').forEach(el=>el.classList.remove('changed')); }
+// tag every edit inside the tree sheet: typed inputs/selects/textareas fire 'input'/'change'
+(function(){
+  document.addEventListener('input', e=>{ const el=e.target; if(el && el.closest && el.closest('#sheet .field')) markChanged(el); }, true);
+  document.addEventListener('change', e=>{ const el=e.target; if(el && el.closest && el.closest('#sheet .field')) markChanged(el); }, true);
+})();
 function autoOnDbh(id){ Object.assign(derived, dbhDerived(gv(id))); renderAuto(); }
 function autoOnSpecies(id){ taxoLookup(gv(id)).then(t=>{Object.assign(derived,t); renderAuto();}); }
 
@@ -1243,7 +1255,17 @@ function applyActivity(){
   show('.grp-snapnote', act==='Inspection'||act==='Planted');
   const b=document.getElementById('i_submit');if(b)b.textContent=act==='Removed'?'Submit removal':act==='Planted'?'Submit planting':'Save log';
 }
-function onPhoto(ev){const f=ev.target.files&&ev.target.files[0];if(!f)return;photoFile=f;const w=document.getElementById('i_photowrap');w.classList.add('has');const r=new FileReader();r.onload=e=>{w.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · attached</div>`;};r.readAsDataURL(f);}
+function onPhoto(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  photoFile=f;
+  const w=document.getElementById('i_photowrap'); w.classList.add('has');
+  // keep the <input id="i_photo"> alive (destroying it loses the file); show preview in a sibling
+  let prev=document.getElementById('i_photoprev');
+  if(!prev){ prev=document.createElement('div'); prev.id='i_photoprev'; w.appendChild(prev); }
+  const r=new FileReader();
+  r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · attached</div>`; };
+  r.readAsDataURL(f);
+}
 function buildInspectionAttrs(gid){
   const act=gv('i_activity');
   const a=(selectedGraphic&&selectedGraphic.attributes)||{};
@@ -1287,7 +1309,7 @@ function submitInspection(){
   }
 
   if(!navigator.onLine){
-    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile}).then(()=>{
+    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile, treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{
       Buffer.count().then(updateQueueBadge);
       if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;treeLayer.refresh();}
       toast('Offline — log saved on device','warn'); openTree(g);
@@ -1295,22 +1317,42 @@ function submitInspection(){
     return;
   }
   const feature=new GraphicC({attributes:attrs});
+  const _photoAtSave=photoFile;   // capture now; the form may be torn down before the promises resolve
   inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     bumpDay('log');
-    if(photoFile){ return addPhoto(res.objectId, photoFile); }
+    if(_photoAtSave){
+      // attach to BOTH the inspection record and the tree point (mirrors Field Maps)
+      const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
+      return addPhoto(res.objectId, _photoAtSave)
+        .then(()=> treeOid!=null ? addTreePhoto(treeOid, _photoAtSave).catch(()=>{}) : null);
+    }
   }).then(()=>{
     if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
       treeLayer.applyEdits({updateFeatures:[g]}).then(()=>treeLayer.refresh());}
     toast('Log saved','ok'); openTree(g);
   }).catch(err=>{
-    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');openTree(g);});
+    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile, treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');openTree(g);});
   });
 }
-function addPhoto(oid, file){
-  const fd=new FormData(); fd.append("attachment", file);
-  return inspLayer.addAttachment(new GraphicC({attributes:{[inspLayer.objectIdField]:oid}}), fd);
+// Build a form holding the file (ArcGIS JS 4.x addAttachment needs an HTMLFormElement, not FormData).
+// A fresh form is built per call so the same photo can be attached to more than one layer.
+function _photoForm(file){
+  const form=document.createElement('form');
+  const input=document.createElement('input'); input.type='file'; input.name='attachment';
+  try{ const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; }catch(e){}
+  form.appendChild(input);
+  return form;
 }
+function addPhotoTo(layer, oid, file){
+  if(!layer||oid==null||!file) return Promise.resolve();
+  const feature=new GraphicC({attributes:{[layer.objectIdField]:oid}});
+  return layer.addAttachment(feature, _photoForm(file)).then(r=>{ if(r && r.error) throw r.error; return r; });
+}
+// inspection-record attachment (kept for existing callers)
+function addPhoto(oid, file){ return addPhotoTo(inspLayer, oid, file); }
+// tree-point attachment — mirrors the ArcGIS Field Maps behaviour of putting the photo on the tree too
+function addTreePhoto(treeOid, file){ return addPhotoTo(treeLayer, treeOid, file); }
 
 /* ------------- offline buffer (IndexedDB) ------------- */
 const Buffer={
@@ -1335,7 +1377,7 @@ function flushQueue(){
       inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
         const res=r.addFeatureResults[0]; if(res.error) throw res.error;
         bumpDay('log');
-        if(it.photo) return addPhoto(res.objectId, it.photo);
+        if(it.photo){ return addPhoto(res.objectId, it.photo).then(()=> it.treeOid!=null ? addTreePhoto(it.treeOid, it.photo).catch(()=>{}) : null); }
       }).then(()=>Buffer.remove(it.id)).then(()=>{Buffer.count().then(updateQueueBadge);next(i+1);})
       .catch(()=>next(i+1)); // leave in buffer, try later
     })(0);
