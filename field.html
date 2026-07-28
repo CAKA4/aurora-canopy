@@ -368,7 +368,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <div id="pickList"></div>
   </div>
 </div>
-<div id="arm"><span>Drag map to line up the crosshair</span><button id="armCenter" onclick="placeAtCenter()">✛ Place here</button><button id="armGps" onclick="placeAtGps()">📍 GPS</button></div>
+<div id="arm"><span>📍 Dropped at your location — drag the point to adjust</span></div>
 
 <div id="fabs">
   <button class="fab add" id="fabAdd" onclick="toggleAdd()">
@@ -471,7 +471,7 @@ let geometryEngine=null, gpsWatch=null, gpsGraphic=null, gpsRing=null, lastGps=n
 let followGps=true, _userPanned=false;   // map auto-centers on GPS until the user pans
 let derived={};   // auto-computed field values for the tree currently being added/edited
 let currentInspector='', idPick='';
-let addMode=false, provisional=null, selectedGraphic=null;
+let addMode=false, provisional=null, selectedGraphic=null, _dragHandle=null;
 let esriId, GraphicC, PointC;
 let dayAdded=0, dayEdited=0, dayLogged=0, dashPeriod='today';
 function bumpDay(kind){
@@ -793,25 +793,73 @@ function cycleBase(){basemapToggleIdx=(basemapToggleIdx+1)%BASES.length;map.base
 
 /* ------------- add-tree ------------- */
 function toggleAdd(){
-  addMode=!addMode;
-  const f=document.getElementById('fabAdd');
-  f.classList.toggle('arming',addMode);
-  document.getElementById('addLbl').textContent=addMode?'Cancel':'Add tree';
-  document.getElementById('arm').classList.toggle('show',addMode);
-  document.getElementById('xhair').classList.toggle('show',addMode);   // crosshair marks the exact spot
-  if(addMode){
-    // Aim by dragging the map under the fixed centre crosshair. Start centred on the GPS
-    // position if we have one, so the common case ("plant a tree where I'm standing") needs no panning.
-    if(lastGps){ view.goTo({target:new PointC({latitude:lastGps.latitude,longitude:lastGps.longitude}), zoom:Math.max(view.zoom,19)}).catch(()=>{}); }
-    followGps=false;                                    // the crosshair, not the map, now marks the spot
-    const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following');
-  } else {
+  if(addMode){ // currently adding -> this tap cancels
+    addMode=false;
+    document.getElementById('fabAdd').classList.remove('arming');
+    document.getElementById('addLbl').textContent='Add tree';
+    document.getElementById('arm').classList.remove('show');
     clearProvisional();
+    return;
+  }
+  // start adding: drop a point at the user's GPS location immediately, then open the form.
+  addMode=true;
+  const f=document.getElementById('fabAdd'); f.classList.add('arming');
+  document.getElementById('addLbl').textContent='Cancel';
+  followGps=false; const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following');
+
+  const dropAt=(pt)=>{
+    view.goTo({target:pt, zoom:Math.max(view.zoom||19,19)}).catch(()=>{});
+    placeProvisional(pt);                     // drops the (draggable) point and opens the form
+    document.getElementById('arm').classList.add('show');   // hint: drag to adjust
+  };
+
+  // use the freshest GPS we can get; fall back to last known, then map centre
+  if(navigator.geolocation){
+    const f2=document.getElementById('fabAdd'); const prev=document.getElementById('addLbl').textContent;
+    document.getElementById('addLbl').textContent='Locating…';
+    navigator.geolocation.getCurrentPosition(p=>{
+      lastGps=p.coords; drawGps(new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude}), p.coords.accuracy);
+      document.getElementById('addLbl').textContent='Cancel';
+      dropAt(new PointC({latitude:p.coords.latitude, longitude:p.coords.longitude}));
+    }, e=>{
+      document.getElementById('addLbl').textContent='Cancel';
+      // no fix: fall back to last known GPS, else the map centre
+      const pt = lastGps ? new PointC({latitude:lastGps.latitude,longitude:lastGps.longitude})
+                         : (view.center.clone?view.center.clone():view.center);
+      dropAt(pt); toast('No GPS fix — drag the point to the tree','warn');
+    }, {enableHighAccuracy:true, timeout:8000, maximumAge:0});
+  } else {
+    dropAt(view.center.clone?view.center.clone():view.center);
+    toast('Location unavailable — drag the point to the tree','warn');
   }
 }
-function clearProvisional(){if(provisional){view.graphics.remove(provisional);provisional=null;}}
+function clearProvisional(){if(_dragHandle){try{_dragHandle.remove();}catch(e){}_dragHandle=null;} if(provisional){view.graphics.remove(provisional);provisional=null;}}
 // confirm placement at whatever the crosshair (map centre) is currently over, then open the form
-function placeProvisional(pt){clearProvisional();const xh=document.getElementById('xhair');if(xh)xh.classList.remove('show');document.getElementById('arm').classList.remove('show');provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:14,outline:{color:"#fff",width:2}}});view.graphics.add(provisional);openNewTree(pt);}
+function placeProvisional(pt){clearProvisional();const xh=document.getElementById('xhair');if(xh)xh.classList.remove('show');provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:16,outline:{color:"#fff",width:2.5}}});view.graphics.add(provisional);enableProvisionalDrag();openNewTree(pt);}
+// let the user drag the provisional point to fine-tune its location before saving
+function enableProvisionalDrag(){
+  if(_dragHandle){ try{_dragHandle.remove();}catch(e){} _dragHandle=null; }
+  let dragging=false;
+  _dragHandle=view.on("drag", (ev)=>{
+    if(!provisional) return;
+    if(ev.action==="start"){
+      const hit=view.toMap(ev); // quick proximity check to the point
+      // begin dragging only if the gesture starts near the provisional point
+      view.hitTest(ev).then(res=>{
+        const on=res.results.some(r=>r.graphic===provisional);
+        if(on){ dragging=true; ev.stopPropagation(); }
+      });
+    } else if(ev.action==="update" && dragging){
+      ev.stopPropagation();
+      const mp=view.toMap({x:ev.x,y:ev.y});
+      if(mp){ provisional.geometry=mp; }
+    } else if(ev.action==="end" && dragging){
+      dragging=false; ev.stopPropagation();
+      // refresh the address/derived values for the new spot
+      if(provisional.geometry){ fillAddressFromParcel(provisional.geometry); computeGridXY(provisional.geometry).then(o=>{Object.assign(derived,o);renderAuto();}); }
+    }
+  });
+}
 function placeAtCenter(){ if(!view||!view.center)return; const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
 /* nearest-parcel address lookup (mirrors the Field Maps parcel logic) */
 function lookupAddress(point){
@@ -1136,16 +1184,42 @@ function capturePreEdit(a){
     RECOTREA:a.RECOTREA, INSPECTR:a.INSPECTR, oldDate:rawTreeDate(a) };
 }
 // carry the tree's pre-edit state into the log as a dated "prior" inspection, so nothing is lost when the tree record is overwritten
+// How recent a prior inspection must be for an edit to count as a CORRECTION (not a re-inspection).
+const CORRECTION_WINDOW_MS = 60*60*1000;   // 60 minutes
+// Decide whether this edit is a same-session correction. If so, UPDATE the existing recent
+// inspection to the corrected values (no new record). If it's a genuine later re-inspection,
+// carry the pre-edit state forward as a dated prior record (history). Returns a Promise<'correction'|'reinspection'>.
 function writePriorLog(g){
-  if(!_preEdit || !g) return Promise.resolve();
-  const gid=g.attributes.GlobalID; const oldDate=_preEdit.oldDate;
-  if(oldDate==null||oldDate===''||!inspLayer) return Promise.resolve();   // no prior date to anchor -> nothing to carry
-  return inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}' AND activity_type IN ('Inspection','Planted')`, outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"], num:1}).then(res=>{
-    if(res.features.length){ const L=res.features[0].attributes;
-      const sameDay=fmtDate(logDate(L))===fmtDate(oldDate);
-      const sameCond=String(L.condition_at_inspection==null?'':L.condition_at_inspection)===String(_preEdit.OVERHEAL==null?'':_preEdit.OVERHEAL);
-      const sameDbh=String(L.DBH==null?'':L.DBH)===String(_preEdit.DBH==null?'':_preEdit.DBH);
-      if(sameDay && sameCond && sameDbh) return;   // this state is already recorded at this date — don't duplicate
+  if(!_preEdit || !g || !inspLayer) return Promise.resolve('reinspection');
+  const gid=g.attributes.GlobalID;
+  return inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}' AND activity_type IN ('Inspection','Planted')`, outFields:["*","CreationDate"], returnGeometry:false, orderByFields:["CreationDate DESC"], num:1}).then(res=>{
+    const now=Date.now();
+    const last=res.features.length?res.features[0].attributes:null;
+    // creation time of the most recent inspection (prefer CreationDate; fall back to its date)
+    let lastMs=null;
+    if(last){ const c=last.CreationDate; const d=logDate(last);
+      lastMs = (c!=null? Number(c) : (d!=null? new Date(d).getTime() : null)); }
+
+    // ---- CORRECTION: the most recent inspection is very fresh -> update it in place, no new record ----
+    if(last && lastMs!=null && (now-lastMs) <= CORRECTION_WINDOW_MS){
+      const oid=last[inspLayer.objectIdField];
+      const upd={ [inspLayer.objectIdField]:oid,
+        condition_at_inspection:g.attributes.OVERHEAL, Structdefe_at_inspection:g.attributes.STRUDEFE,
+        Woundcank_at_inspection:g.attributes.WOUNCANK, Deaddecay_at_inspection:g.attributes.DEADDECAY,
+        Failpote_at_inspection:g.attributes.FAILPOTE, Pestdisease_at_inspection:g.attributes.PESTDISEAS,
+        Impediment_at_inspection:g.attributes.IMPEDMNT, DBH:(g.attributes.DBH!=null?g.attributes.DBH:null),
+        recommendations:g.attributes.RECOTREA, Species:g.attributes.COMMON };
+      return inspLayer.applyEdits({updateFeatures:[{attributes:upd}]}).then(()=>'correction').catch(()=>'correction');
+    }
+
+    // ---- RE-INSPECTION: meaningful time has passed -> carry the pre-edit state forward as history ----
+    const oldDate=_preEdit.oldDate;
+    if(oldDate==null||oldDate==='') return 'reinspection';
+    if(last){
+      const sameDay=fmtDate(logDate(last))===fmtDate(oldDate);
+      const sameCond=String(last.condition_at_inspection==null?'':last.condition_at_inspection)===String(_preEdit.OVERHEAL==null?'':_preEdit.OVERHEAL);
+      const sameDbh=String(last.DBH==null?'':last.DBH)===String(_preEdit.DBH==null?'':_preEdit.DBH);
+      if(sameDay && sameCond && sameDbh) return 'reinspection';   // already recorded — don't duplicate
     }
     const attrs={};
     attrs[CONFIG.fkField]=gid; attrs.activity_type='Inspection';
@@ -1157,8 +1231,8 @@ function writePriorLog(g){
     attrs.Impediment_at_inspection=_preEdit.IMPEDMNT; attrs.DBH=(_preEdit.DBH!=null?_preEdit.DBH:null);
     attrs.recommendations=_preEdit.RECOTREA; attrs.Species=_preEdit.COMMON;
     attrs.maintenance_notes='Prior recorded state, carried forward automatically before the '+today()+' update.';
-    return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); }).catch(()=>{});
-  }).catch(()=>{});
+    return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); return 'reinspection'; }).catch(()=>'reinspection');
+  }).catch(()=>'reinspection');
 }
 function saveTree(){
   const g=selectedGraphic; if(!g)return;
@@ -1175,9 +1249,16 @@ function saveTree(){
       if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
       treeLayer.refresh(); bumpDay('edit');
       rememberLastTree(g.attributes);   // copyable for 'Same as last tree'
-      writePriorLog(g);   // preserve the pre-edit state as a dated prior inspection (background)
-      toast('Tree updated — add your inspection note','ok');
-      openInspection(g,'Inspection');   // auto-open the log, pre-filled with the new values
+      // writePriorLog decides: a same-session correction updates the existing record (no new log);
+      // a genuine later re-inspection carries history forward and opens a fresh inspection note.
+      writePriorLog(g).then(kind=>{
+        if(kind==='correction'){
+          toast('Tree corrected','ok'); closeSheet();   // no duplicate inspection; back to the map
+        } else {
+          toast('Tree updated — add your inspection note','ok');
+          openInspection(g,'Inspection');
+        }
+      });
     }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Save tree';} toast('Save failed: '+(err.message||err),'err'); });
   });
 }
