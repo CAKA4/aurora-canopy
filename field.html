@@ -1174,6 +1174,7 @@ function saveTree(){
     treeLayer.applyEdits({updateFeatures:[g]}).then(r=>{
       if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
       treeLayer.refresh(); bumpDay('edit');
+      rememberLastTree(g.attributes);   // copyable for 'Same as last tree'
       writePriorLog(g);   // preserve the pre-edit state as a dated prior inspection (background)
       toast('Tree updated — add your inspection note','ok');
       openInspection(g,'Inspection');   // auto-open the log, pre-filled with the new values
@@ -1186,6 +1187,7 @@ function openNewTree(pt){
   derived={}; newPhotoFile=null;
   setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
   document.getElementById('shBody').innerHTML=`
+    ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
     <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="${esc(recentSpecies[0]||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
     <div class="field"><label>Overall health</label><select id="n_OVERHEAL">${options('OVERHEAL','Good',false)}</select></div>
@@ -1207,12 +1209,54 @@ function openNewTree(pt){
   computeGridXY(pt).then(o=>{Object.assign(derived,o);renderAuto();});
   nextTreeNum().then(n=>{derived.TREENUM_NEW=n;renderAuto();});
 }
+// remember the copyable attributes of a tree just added or edited (species, size, condition, defects)
+function rememberLastTree(a){
+  if(!a) return;
+  lastTreeAttrs={
+    COMMON:a.COMMON, DBH:a.DBH, OVERHEAL:a.OVERHEAL, SITELOCA:a.SITELOCA,
+    STRUDEFE:a.STRUDEFE, WOUNCANK:a.WOUNCANK, DEADDECAY:a.DEADDECAY, FAILPOTE:a.FAILPOTE,
+    PESTDISEAS:a.PESTDISEAS, IMPEDMNT:a.IMPEDMNT, RECOTREA:a.RECOTREA
+    // deliberately NOT copied: location, address/street/park, comments, photo, dates, tree number
+  };
+}
+// copy species/size/condition/defects from the last tree into the new-tree form
+function fillFromLastTree(){
+  if(!lastTreeAttrs){ toast('No previous tree yet','warn'); return; }
+  const L=lastTreeAttrs;
+  const setSel=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null){ el.value=v; markChanged(el); } };
+  const setPick=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null){ el.value=domLabelFor(id,v); el.setAttribute('data-val',v); markChanged(el); } };
+  // species + DBH (pickfields that store their display value directly)
+  const cs=document.getElementById('n_COMMON'); if(cs&&L.COMMON){ cs.value=L.COMMON; markChanged(cs); }
+  const cd=document.getElementById('n_DBH'); if(cd&&L.DBH!=null){ cd.value=L.DBH; markChanged(cd); }
+  // plain selects
+  setSel('n_OVERHEAL',L.OVERHEAL); setSel('n_SITELOCA',L.SITELOCA);
+  setSel('n_STRUDEFE',L.STRUDEFE); setSel('n_WOUNCANK',L.WOUNCANK);
+  setSel('n_DEADDECAY',L.DEADDECAY); setSel('n_FAILPOTE',L.FAILPOTE); setSel('n_RECOTREA',L.RECOTREA);
+  // domain pickfields (store code in data-val, show label)
+  setPick('n_PESTDISEAS',L.PESTDISEAS); setPick('n_IMPEDMNT',L.IMPEDMNT);
+  // recompute derived (height/crown/age from DBH, species lookup)
+  if(L.DBH!=null) Object.assign(derived, dbhDerived(L.DBH));
+  if(L.COMMON) autoOnSpecies('n_COMMON');
+  renderAuto();
+  toast('Copied from last tree — add photo & notes','ok');
+}
+// resolve a domain code to its display label for a given field id
+function domLabelFor(id,code){
+  const map={n_PESTDISEAS:'PESTDISEAS', n_IMPEDMNT:'IMPEDMNT'};
+  const dk=map[id]; if(!dk) return code;
+  return domLabel(dk,code);
+}
 function saveNewTree(){
   if(!provisional){toast('No location set','warn');return;}
   const common=gv('n_COMMON').trim(); if(!common){toast('Species is required','warn');return;}
   Object.assign(derived, dbhDerived(gv('n_DBH')));
   recordSpecies(common); if(gv('n_DBH')!=='') recordDbh(parseFloat(gv('n_DBH')));
   const btn=document.getElementById('n_save'); if(btn){btn.disabled=true; btn.textContent='Creating…';}
+  // remember these attributes for a possible "Same as last tree" on the next one
+  rememberLastTree({ COMMON:common, DBH:(gv('n_DBH')?parseFloat(gv('n_DBH')):null),
+    OVERHEAL:gv('n_OVERHEAL'), SITELOCA:gv('n_SITELOCA'), STRUDEFE:gv('n_STRUDEFE'),
+    WOUNCANK:gv('n_WOUNCANK'), DEADDECAY:gv('n_DEADDECAY'), FAILPOTE:gv('n_FAILPOTE'),
+    PESTDISEAS:gvField('n_PESTDISEAS'), IMPEDMNT:gvField('n_IMPEDMNT'), RECOTREA:gv('n_RECOTREA') });
   // ensure taxonomy resolved before writing
   Promise.resolve(derived.SPECIES2!==undefined?derived:taxoLookup(common).then(t=>Object.assign(derived,t))).then(()=>{
   const g=new GraphicC({geometry:provisional.geometry, attributes:{
@@ -1242,6 +1286,7 @@ function saveNewTree(){
 
 /* ------------- INSPECTION ------------- */
 let photoFile=null, editingInsp=null, resyncSnapshot=false, newPhotoFile=null;
+let lastTreeAttrs=null;   // attributes of the last tree added/edited this session (for 'Same as last tree')
 function resyncFromTree(){
   const a=selectedGraphic&&selectedGraphic.attributes; if(!a)return;
   const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=dval(v);};
