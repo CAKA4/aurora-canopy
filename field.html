@@ -1220,7 +1220,11 @@ function saveNewTree(){
     STRUDEFE:gv('n_STRUDEFE'), WOUNCANK:gv('n_WOUNCANK'), DEADDECAY:gv('n_DEADDECAY'),
     FAILPOTE:gv('n_FAILPOTE'), PESTDISEAS:gvField('n_PESTDISEAS'), IMPEDMNT:gvField('n_IMPEDMNT'), RECOTREA:gv('n_RECOTREA'),
     SPECIES2:derived.SPECIES2, FAMILY:derived.FAMILY, CROWNDIAM:derived.CROWNDIAM, AGECLASS:derived.AGECLASS,
-    GRID:derived.GRID, X:derived.X, Y:derived.Y, TREENUM_NEW:derived.TREENUM_NEW, [CONFIG.parkTargetField]:(derived.PARKNAM||null), [CONFIG.streetTargetField]:(derived.STREET||null), [CONFIG.distTargetField]:(derived.ROADDIST==null?null:derived.ROADDIST)
+    GRID:derived.GRID, X:derived.X, Y:derived.Y, TREENUM_NEW:derived.TREENUM_NEW, [CONFIG.parkTargetField]:(derived.PARKNAM||null), [CONFIG.streetTargetField]:(derived.STREET||null), [CONFIG.distTargetField]:(derived.ROADDIST==null?null:derived.ROADDIST),
+    // stamp the inventory date so new trees appear under date filters (Field Maps sets this too).
+    // DATE_NEW = most-recent inspection date (what the dashboard filters on); DATE_ = original date.
+    DATE_NEW:Date.now(), DATE_:Date.now(), INSPECTR:(currentInspector||null),
+    ...( (treeDateField && treeDateField!=='DATE_NEW') ? {[treeDateField]:Date.now()} : {} )
   }});
   treeLayer.applyEdits({addFeatures:[g]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
