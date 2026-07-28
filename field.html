@@ -147,9 +147,10 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
   border-radius:11px;color:#0E0E0E;font-family:var(--sans);font-size:16px;font-weight:500;padding:12px 12px;appearance:none}
 .field input::placeholder,.field textarea::placeholder{color:#6b5d15}
 /* a field the user has modified turns pink, so edited attributes are easy to spot */
-.field input.changed,.field select.changed,.field textarea.changed{background:#FBB6CE;border-color:#E86FA0}
+.field input.changed,.field textarea.changed{background:#FBB6CE;border-color:#E86FA0}
 .field input.changed::placeholder,.field textarea.changed::placeholder{color:#8a3a5c}
-.field select.changed{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>")}
+/* selects use background-color (not the 'background' shorthand) so the dropdown arrow image is preserved */
+.field select.changed{background-color:#FBB6CE;border-color:#E86FA0}
 .field textarea{min-height:74px;resize:vertical;line-height:1.4}
 .field select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
   background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
