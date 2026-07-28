@@ -523,7 +523,7 @@ const CONFIG = {
   taxonomyItemId: "72a9256564e54bd7b5915110b9a3cedf"
 };
 const HC={'Good':'--good','Satisfactory':'--sat','Potential trouble':'--pot','Declining':'--dec','Dead':'--dead','Death imminent':'--dead','Removed':'--gone','Stump':'--gone','Stump carving':'--gone'};
-const CONDORDER=['Good','Satisfactory','Potential trouble','Declining','Dead','Death imminent','Removed','Stump','Stump carving'];
+const CONDORDER=['Good','Satisfactory','Potential trouble','Declining','Death imminent','Dead','Removed','Stump','Stump carving'];
 const NON_CONDITION=['Removed','Stump','Stump carving'];  // not living canopy — excluded from condition %
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const col=h=>cssv(HC[h]||'--gone');
