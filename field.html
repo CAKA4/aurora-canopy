@@ -363,8 +363,8 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
 <div id="xhair"><span class="dot"></span></div>
 <div id="picker">
   <div class="pickbox">
-    <div class="pickhead"><span id="pickTitle">Choose</span><button class="done" onclick="pickClose()">Done</button></div>
-    <div class="picksearchwrap"><input id="pickSearch" placeholder="Search or type…" oninput="renderPickList()" autocomplete="off" autocorrect="off" autocapitalize="none"></div>
+    <div class="pickhead"><span id="pickTitle">Choose</span><button class="done" onclick="pickCommit()">✓ Done</button></div>
+    <div class="picksearchwrap"><input id="pickSearch" placeholder="Search or type…" oninput="renderPickList()" onkeydown="pickKey(event)" autocomplete="off" autocorrect="off" autocapitalize="none"></div>
     <div id="pickList"></div>
   </div>
 </div>
@@ -678,6 +678,17 @@ function lastInvDate(a){
 function options(dkey,current,blank){const d=DOMAINS[dkey]||{};let h=blank?'<option value="">—</option>':'';for(const c in d){h+=`<option value="${esc(c)}"${current===c?' selected':''}>${esc(d[c])}</option>`;}return h;}
 /* ---- species master list (from the official taxonomy table) + rapid-entry recents ---- */
 let taxoRows=[], taxoMap={}, recentSpecies=[], recentDbh=[], speciesFreq={}, dbhFreq={};
+// restore usage frequencies so commonly-entered species/DBH stay at the top of the list across sessions
+(function(){ try{
+  const s=localStorage.getItem('aurora_speciesFreq'); if(s) speciesFreq=JSON.parse(s)||{};
+  const d=localStorage.getItem('aurora_dbhFreq'); if(d) dbhFreq=JSON.parse(d)||{};
+  const rs=localStorage.getItem('aurora_recentSpecies'); if(rs) recentSpecies=JSON.parse(rs)||[];
+}catch(e){} })();
+function _persistFreq(){ try{
+  localStorage.setItem('aurora_speciesFreq', JSON.stringify(speciesFreq));
+  localStorage.setItem('aurora_dbhFreq', JSON.stringify(dbhFreq));
+  localStorage.setItem('aurora_recentSpecies', JSON.stringify(recentSpecies.slice(0,10)));
+}catch(e){} }
 function loadTaxonomy(){
   if(!taxoLayer) return;
   taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName IS NOT NULL", outFields:["CommonName","Species","Family"], returnGeometry:false, orderByFields:["CommonName"], num:2000}))
@@ -690,8 +701,8 @@ function loadTaxonomy(){
 function pushRecent(arr,val){ if(val==null||val==='')return; const i=arr.findIndex(x=>String(x)===String(val)); if(i>=0)arr.splice(i,1); arr.unshift(val); if(arr.length>10)arr.length=10; }
 function bumpUse(map,val){ if(val==null||val==='')return; const k=String(val); map[k]=(map[k]||0)+1; }
 // record a used value: bumps its frequency and keeps it as the most-recent (for the new-tree default)
-function recordSpecies(v){ pushRecent(recentSpecies,v); bumpUse(speciesFreq,v); }
-function recordDbh(v){ pushRecent(recentDbh,v); bumpUse(dbhFreq,v); }
+function recordSpecies(v){ pushRecent(recentSpecies,v); bumpUse(speciesFreq,v); _persistFreq(); }
+function recordDbh(v){ pushRecent(recentDbh,v); bumpUse(dbhFreq,v); _persistFreq(); }
 function byFreqThenRecent(freq,recent){ return (a,b)=>{ const fa=freq[String(a)]||0, fb=freq[String(b)]||0; if(fb!==fa)return fb-fa; const ra=recent.indexOf(a), rb=recent.indexOf(b); return (ra<0?99:ra)-(rb<0?99:rb); }; }
 function speciesOptions(){
   const names = taxoRows.length ? taxoRows.map(a=>a.CommonName) : Object.keys(DOMAINS.COMMON||{});
@@ -759,6 +770,22 @@ function renderPickList(){
   if(!box.children.length){ const e=document.createElement('div'); e.className='pickempty'; e.textContent='No matches — keep typing to add a new one'; box.appendChild(e); }
 }
 function pickChoose(v){ const st=pickState; pickClose(); if(st&&st.onPick)st.onPick(v); }
+// commit the typed value (Return key or ✓ Done). If the text exactly matches a list item, use that;
+// otherwise, for allowFree pickers (species/DBH/domains), accept the typed value as-is.
+function pickCommit(){
+  if(!pickState){ pickClose(); return; }
+  const q=(document.getElementById('pickSearch').value||'').trim();
+  if(q===''){ pickClose(); return; }            // nothing typed -> just close
+  const items=pickState.items||[];
+  const exact=items.find(x=>String(x).toLowerCase()===q.toLowerCase());
+  if(exact!=null){ pickChoose(exact); return; }
+  if(pickState.allowFree){ pickChoose(q); return; }   // accept a new typed value
+  // not free-form and no exact match: pick the first filtered result if any, else close
+  const first=items.find(x=>String(x).toLowerCase().indexOf(q.toLowerCase())>=0);
+  if(first!=null) pickChoose(first); else pickClose();
+}
+// Return key in the search box submits the typed value
+function pickKey(ev){ if(ev.key==='Enter'||ev.keyCode===13){ ev.preventDefault(); pickCommit(); } }
 function pickClose(){ document.getElementById('picker').classList.remove('show'); pickState=null; }
 function openSpeciesPicker(id){ openPicker({title:'Species — common name', items:speciesList(), value:gv(id), allowFree:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnSpecies(id); }}); }
 function openDbhPicker(id){ openPicker({title:'DBH (cm)', items:dbhList(), value:gv(id), allowFree:true, numeric:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnDbh(id); }}); }
@@ -1262,7 +1289,7 @@ function openNewTree(pt){
   setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
   document.getElementById('shBody').innerHTML=`
     ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
-    <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="${esc(recentSpecies[0]||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
+    <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
     <div class="field"><label>Overall health</label><select id="n_OVERHEAL">${options('OVERHEAL','Good',false)}</select></div>
     <div class="field"><label>Site location</label><select id="n_SITELOCA">${options('SITELOCA','Boulevard',false)}</select></div>
@@ -1279,7 +1306,7 @@ function openNewTree(pt){
   openSheet();
   fillAddressFromParcel(pt);
   renderAuto();
-  if(recentSpecies[0]) autoOnSpecies('n_COMMON');
+  // species starts blank on a new tree — no auto lookup until the user picks one
   computeGridXY(pt).then(o=>{Object.assign(derived,o);renderAuto();});
   nextTreeNum().then(n=>{derived.TREENUM_NEW=n;renderAuto();});
 }
@@ -1404,7 +1431,31 @@ function applyActivity(){
 }
 // downscale a captured photo to speed up upload: 1600px long edge, JPEG ~80%.
 // Returns a Promise<File>; on any failure it resolves the ORIGINAL so a save never breaks.
-const PHOTO_MAXEDGE=1400, PHOTO_QUALITY=0.72;
+// photo upload quality — changeable in the SYNC & settings panel (persists for the session)
+const PHOTO_PRESETS={
+  fast:   {edge:1000, q:0.65, label:'Fast (smallest, ~120 KB)'},
+  balanced:{edge:1400, q:0.72, label:'Balanced (~250 KB)'},
+  detail: {edge:2000, q:0.8,  label:'High detail (~500 KB)'}
+};
+let PHOTO_PRESET = 'fast';   // default to fastest uploads in the field
+let PHOTO_MAXEDGE = PHOTO_PRESETS[PHOTO_PRESET].edge;
+let PHOTO_QUALITY = PHOTO_PRESETS[PHOTO_PRESET].q;
+function setPhotoPreset(key){
+  if(!PHOTO_PRESETS[key]) return;
+  PHOTO_PRESET=key; PHOTO_MAXEDGE=PHOTO_PRESETS[key].edge; PHOTO_QUALITY=PHOTO_PRESETS[key].q;
+  try{ localStorage.setItem('aurora_photo_preset', key); }catch(e){}
+  toast('Photo quality: '+PHOTO_PRESETS[key].label,'ok');
+}
+// restore saved preference on load
+(function(){ try{ const s=localStorage.getItem('aurora_photo_preset'); if(s&&PHOTO_PRESETS[s]) setPhotoPresetQuiet(s); }catch(e){} })();
+function setPhotoPresetQuiet(key){ if(!PHOTO_PRESETS[key])return; PHOTO_PRESET=key; PHOTO_MAXEDGE=PHOTO_PRESETS[key].edge; PHOTO_QUALITY=PHOTO_PRESETS[key].q; }
+function pickPhotoPreset(key){
+  setPhotoPreset(key);
+  const wrap=document.getElementById('photoPresetPicks');
+  if(wrap){ wrap.querySelectorAll('.hlp').forEach(b=>b.classList.remove('on'));
+    const idx={fast:0,balanced:1,detail:2}[key]; const btns=wrap.querySelectorAll('.hlp'); if(btns[idx]) btns[idx].classList.add('on'); }
+  const hint=document.getElementById('photoPresetHint'); if(hint) hint.textContent=PHOTO_PRESETS[key].label;
+}
 function resizeImage(file){
   return new Promise(resolve=>{
     try{
@@ -1701,6 +1752,14 @@ function openRecords(){
       </div>
       <div class="note">Offline edits are held safely on this device and flush automatically when you reconnect.</div>
       ${q?`<div class="actions"><button class="btn primary" onclick="flushQueue();closeSheet()">Sync ${q} now</button></div>`:''}
+      <div class="slabel">Photo quality</div>
+      <div class="note" style="margin-bottom:8px">Lower quality uploads faster on weak signal. Higher keeps more detail for defects.</div>
+      <div class="hlpicks" id="photoPresetPicks">
+        <button class="hlp${PHOTO_PRESET==='fast'?' on':''}" onclick="pickPhotoPreset('fast')">Fast</button>
+        <button class="hlp${PHOTO_PRESET==='balanced'?' on':''}" onclick="pickPhotoPreset('balanced')">Balanced</button>
+        <button class="hlp${PHOTO_PRESET==='detail'?' on':''}" onclick="pickPhotoPreset('detail')">High detail</button>
+      </div>
+      <div class="hint" id="photoPresetHint" style="margin-bottom:6px">${esc(PHOTO_PRESETS[PHOTO_PRESET].label)}</div>
       <div class="slabel">Management</div>
       <div class="actions"><button class="btn brand" style="width:100%" onclick="location.href='/'">Open management dashboard</button></div>
       <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:16px;padding-top:12px;border-top:1px solid var(--line);line-height:1.5">&copy; 2026 Silv-Econ Ltd. All rights reserved.<br>Proprietary and confidential — not for redistribution or reuse without written permission.</div>
