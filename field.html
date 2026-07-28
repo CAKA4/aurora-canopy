@@ -368,7 +368,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <div id="pickList"></div>
   </div>
 </div>
-<div id="arm"><span>📍 Dropped at your location — drag the point to adjust</span></div>
+<div id="arm"><span>📍 At your location — pan the map to fine-tune, then Save</span></div>
 
 <div id="fabs">
   <button class="fab add" id="fabAdd" onclick="toggleAdd()">
@@ -737,9 +737,14 @@ function openPicker(cfg){
   document.getElementById('pickTitle').textContent=cfg.title;
   const s=document.getElementById('pickSearch');
   s.value=''; s.setAttribute('inputmode', cfg.numeric?'decimal':'text');
+  // for short tap-only lists (domain pickers) hide the search box and DON'T focus it,
+  // so the keyboard never pops up and covers the list
+  const wrap=document.querySelector('.picksearchwrap');
+  if(wrap) wrap.style.display = cfg.noSearch ? 'none' : '';
   renderPickList();
   document.getElementById('picker').classList.add('show');
-  setTimeout(()=>{try{s.focus();}catch(e){}},60);
+  if(!cfg.noAutoFocus){ setTimeout(()=>{try{s.focus();}catch(e){}},60); }
+  else { try{ s.blur(); }catch(e){} }
 }
 function renderPickList(){
   if(!pickState)return;
@@ -772,7 +777,7 @@ function openDomainPicker(id, dkey, title){
   const el=document.getElementById(id);
   const curCode=el?(el.getAttribute('data-val')||el.value):'';
   const curLabel=(d[curCode]!=null?d[curCode]:curCode);
-  openPicker({title:title, items:labels, value:curLabel, allowFree:true, onPick:v=>{
+  openPicker({title:title, items:labels, value:curLabel, allowFree:true, noAutoFocus:true, onPick:v=>{
     const code=(label2code[v]!=null?label2code[v]:v);   // known label → its code; a typed value is stored as-is
     if(el){ el.value=v; el.setAttribute('data-val', code); markChanged(el); }
   }});
@@ -833,31 +838,33 @@ function toggleAdd(){
     toast('Location unavailable — drag the point to the tree','warn');
   }
 }
-function clearProvisional(){if(_dragHandle){try{_dragHandle.remove();}catch(e){}_dragHandle=null;} if(provisional){view.graphics.remove(provisional);provisional=null;}}
+function clearProvisional(){if(_dragHandle){try{_dragHandle.remove();}catch(e){}_dragHandle=null;} if(_pinSettleT){clearTimeout(_pinSettleT);_pinSettleT=null;} const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show'); if(provisional){view.graphics.remove(provisional);provisional=null;}}
 // confirm placement at whatever the crosshair (map centre) is currently over, then open the form
-function placeProvisional(pt){clearProvisional();const xh=document.getElementById('xhair');if(xh)xh.classList.remove('show');provisional=new GraphicC({geometry:pt,symbol:{type:"simple-marker",color:cssv('--amber'),size:16,outline:{color:"#fff",width:2.5}}});view.graphics.add(provisional);enableProvisionalDrag();openNewTree(pt);}
-// let the user drag the provisional point to fine-tune its location before saving
-function enableProvisionalDrag(){
+function placeProvisional(pt){
+  clearProvisional();
+  // centre the map on the drop point, then PIN the point to the map centre so panning the map
+  // moves the point (reliable on both iOS and Android — no fragile point-dragging).
+  view.goTo({target:pt}).catch(()=>{});
+  provisional=new GraphicC({geometry:pt, symbol:{type:"simple-marker",color:cssv('--amber'),size:16,outline:{color:"#fff",width:2.5}}});
+  view.graphics.add(provisional);
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.add('show');   // crosshair marks the centre = the point
+  enableCenterPin();
+  openNewTree(pt);
+}
+// keep the provisional point glued to the map centre while the form is open; refresh address/derived on settle
+let _pinSettleT=null;
+function enableCenterPin(){
   if(_dragHandle){ try{_dragHandle.remove();}catch(e){} _dragHandle=null; }
-  let dragging=false;
-  _dragHandle=view.on("drag", (ev)=>{
-    if(!provisional) return;
-    if(ev.action==="start"){
-      const hit=view.toMap(ev); // quick proximity check to the point
-      // begin dragging only if the gesture starts near the provisional point
-      view.hitTest(ev).then(res=>{
-        const on=res.results.some(r=>r.graphic===provisional);
-        if(on){ dragging=true; ev.stopPropagation(); }
-      });
-    } else if(ev.action==="update" && dragging){
-      ev.stopPropagation();
-      const mp=view.toMap({x:ev.x,y:ev.y});
-      if(mp){ provisional.geometry=mp; }
-    } else if(ev.action==="end" && dragging){
-      dragging=false; ev.stopPropagation();
-      // refresh the address/derived values for the new spot
-      if(provisional.geometry){ fillAddressFromParcel(provisional.geometry); computeGridXY(provisional.geometry).then(o=>{Object.assign(derived,o);renderAuto();}); }
-    }
+  _dragHandle=view.watch("center", (c)=>{
+    if(!provisional || !c) return;
+    provisional.geometry=c;                        // point follows the centre
+    if(_pinSettleT) clearTimeout(_pinSettleT);
+    _pinSettleT=setTimeout(()=>{                    // once panning stops, refresh address + grid/UTM
+      if(provisional && provisional.geometry){
+        fillAddressFromParcel(provisional.geometry);
+        computeGridXY(provisional.geometry).then(o=>{Object.assign(derived,o);renderAuto();});
+      }
+    }, 500);
   });
 }
 function placeAtCenter(){ if(!view||!view.center)return; const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
@@ -1409,26 +1416,63 @@ function applyActivity(){
   show('.grp-snapnote', act==='Inspection'||act==='Planted');
   const b=document.getElementById('i_submit');if(b)b.textContent=act==='Removed'?'Submit removal':act==='Planted'?'Submit planting':'Save log';
 }
+// downscale a captured photo to speed up upload: 1600px long edge, JPEG ~80%.
+// Returns a Promise<File>; on any failure it resolves the ORIGINAL so a save never breaks.
+const PHOTO_MAXEDGE=1600, PHOTO_QUALITY=0.8;
+function resizeImage(file){
+  return new Promise(resolve=>{
+    try{
+      if(!file || !/^image\//.test(file.type||'')) return resolve(file);
+      const url=URL.createObjectURL(file);
+      const img=new Image();
+      img.onload=()=>{
+        try{
+          let {width:w, height:h}=img;
+          const long=Math.max(w,h);
+          if(long<=PHOTO_MAXEDGE){ URL.revokeObjectURL(url); return resolve(file); } // already small enough
+          const scale=PHOTO_MAXEDGE/long;
+          w=Math.round(w*scale); h=Math.round(h*scale);
+          const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+          cv.getContext('2d').drawImage(img,0,0,w,h);
+          URL.revokeObjectURL(url);
+          cv.toBlob(blob=>{
+            if(!blob) return resolve(file);
+            const name=(file.name||'photo').replace(/\.(png|heic|heif|webp|tiff?)$/i,'.jpg');
+            const out=new File([blob], /\.jpe?g$/i.test(name)?name:(name+'.jpg'), {type:'image/jpeg', lastModified:Date.now()});
+            resolve(out);
+          }, 'image/jpeg', PHOTO_QUALITY);
+        }catch(e){ URL.revokeObjectURL(url); resolve(file); }
+      };
+      img.onerror=()=>{ URL.revokeObjectURL(url); resolve(file); };
+      img.src=url;
+    }catch(e){ resolve(file); }
+  });
+}
 function onNewPhoto(ev){
-  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
-  newPhotoFile=f;
+  const f0=ev.target.files&&ev.target.files[0]; if(!f0)return;
   const w=document.getElementById('n_photowrap'); w.classList.add('has');
   let prev=document.getElementById('n_photoprev');
   if(!prev){ prev=document.createElement('div'); prev.id='n_photoprev'; w.appendChild(prev); }
-  const r=new FileReader();
-  r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · attached</div>`; };
-  r.readAsDataURL(f);
+  prev.innerHTML='<div class="fn">Processing photo…</div>';
+  resizeImage(f0).then(f=>{
+    newPhotoFile=f;
+    const r=new FileReader();
+    r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · ${Math.round((f.size||0)/1024)} KB · attached</div>`; };
+    r.readAsDataURL(f);
+  });
 }
 function onPhoto(ev){
-  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
-  photoFile=f;
+  const f0=ev.target.files&&ev.target.files[0]; if(!f0)return;
   const w=document.getElementById('i_photowrap'); w.classList.add('has');
-  // keep the <input id="i_photo"> alive (destroying it loses the file); show preview in a sibling
   let prev=document.getElementById('i_photoprev');
   if(!prev){ prev=document.createElement('div'); prev.id='i_photoprev'; w.appendChild(prev); }
-  const r=new FileReader();
-  r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · attached</div>`; };
-  r.readAsDataURL(f);
+  prev.innerHTML='<div class="fn">Processing photo…</div>';
+  resizeImage(f0).then(f=>{
+    photoFile=f;
+    const r=new FileReader();
+    r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · ${Math.round((f.size||0)/1024)} KB · attached</div>`; };
+    r.readAsDataURL(f);
+  });
 }
 function buildInspectionAttrs(gid){
   const act=gv('i_activity');
