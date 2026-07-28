@@ -368,7 +368,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <div id="pickList"></div>
   </div>
 </div>
-<div id="arm"><span>📍 At your location — pan the map to fine-tune, then Save</span></div>
+<div id="arm"><span>Pan map to aim</span><button id="armCenter" onclick="confirmPlacement()">✛ Place here</button></div>
 
 <div id="fabs">
   <button class="fab add" id="fabAdd" onclick="toggleAdd()">
@@ -812,60 +812,46 @@ function toggleAdd(){
   document.getElementById('addLbl').textContent='Cancel';
   followGps=false; const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following');
 
-  const dropAt=(pt)=>{
+  // Aim first: centre the map on GPS and show a crosshair. The MAP stays visible so the user can
+  // pan to fine-tune. The form opens only when they tap "Place here" (confirmPlacement).
+  const aimAt=(pt)=>{
     view.goTo({target:pt, zoom:Math.max(view.zoom||19,19)}).catch(()=>{});
-    placeProvisional(pt);                     // drops the (draggable) point and opens the form
-    document.getElementById('arm').classList.add('show');   // hint: drag to adjust
+    const xh=document.getElementById('xhair'); if(xh) xh.classList.add('show');
+    document.getElementById('arm').classList.add('show');   // shows "Place here" button
   };
-
-  // use the freshest GPS we can get; fall back to last known, then map centre
   if(navigator.geolocation){
-    const f2=document.getElementById('fabAdd'); const prev=document.getElementById('addLbl').textContent;
     document.getElementById('addLbl').textContent='Locating…';
     navigator.geolocation.getCurrentPosition(p=>{
       lastGps=p.coords; drawGps(new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude}), p.coords.accuracy);
       document.getElementById('addLbl').textContent='Cancel';
-      dropAt(new PointC({latitude:p.coords.latitude, longitude:p.coords.longitude}));
+      aimAt(new PointC({latitude:p.coords.latitude, longitude:p.coords.longitude}));
     }, e=>{
       document.getElementById('addLbl').textContent='Cancel';
-      // no fix: fall back to last known GPS, else the map centre
       const pt = lastGps ? new PointC({latitude:lastGps.latitude,longitude:lastGps.longitude})
                          : (view.center.clone?view.center.clone():view.center);
-      dropAt(pt); toast('No GPS fix — drag the point to the tree','warn');
+      aimAt(pt); toast('No GPS fix — pan the map to the tree','warn');
     }, {enableHighAccuracy:true, timeout:8000, maximumAge:0});
   } else {
-    dropAt(view.center.clone?view.center.clone():view.center);
-    toast('Location unavailable — drag the point to the tree','warn');
+    aimAt(view.center.clone?view.center.clone():view.center);
+    toast('Location unavailable — pan the map to the tree','warn');
   }
+}
+// user tapped "Place here": drop the point at the current map centre (the crosshair) and open the form
+function confirmPlacement(){
+  if(!view||!view.center) return;
+  const c=view.center.clone?view.center.clone():view.center;
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show');
+  document.getElementById('arm').classList.remove('show');
+  placeProvisional(c);   // this drops the point AND opens the form
 }
 function clearProvisional(){if(_dragHandle){try{_dragHandle.remove();}catch(e){}_dragHandle=null;} if(_pinSettleT){clearTimeout(_pinSettleT);_pinSettleT=null;} const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show'); if(provisional){view.graphics.remove(provisional);provisional=null;}}
 // confirm placement at whatever the crosshair (map centre) is currently over, then open the form
+let _pinSettleT=null;
 function placeProvisional(pt){
   clearProvisional();
-  // centre the map on the drop point, then PIN the point to the map centre so panning the map
-  // moves the point (reliable on both iOS and Android — no fragile point-dragging).
-  view.goTo({target:pt}).catch(()=>{});
   provisional=new GraphicC({geometry:pt, symbol:{type:"simple-marker",color:cssv('--amber'),size:16,outline:{color:"#fff",width:2.5}}});
   view.graphics.add(provisional);
-  const xh=document.getElementById('xhair'); if(xh) xh.classList.add('show');   // crosshair marks the centre = the point
-  enableCenterPin();
-  openNewTree(pt);
-}
-// keep the provisional point glued to the map centre while the form is open; refresh address/derived on settle
-let _pinSettleT=null;
-function enableCenterPin(){
-  if(_dragHandle){ try{_dragHandle.remove();}catch(e){} _dragHandle=null; }
-  _dragHandle=view.watch("center", (c)=>{
-    if(!provisional || !c) return;
-    provisional.geometry=c;                        // point follows the centre
-    if(_pinSettleT) clearTimeout(_pinSettleT);
-    _pinSettleT=setTimeout(()=>{                    // once panning stops, refresh address + grid/UTM
-      if(provisional && provisional.geometry){
-        fillAddressFromParcel(provisional.geometry);
-        computeGridXY(provisional.geometry).then(o=>{Object.assign(derived,o);renderAuto();});
-      }
-    }, 500);
-  });
+  openNewTree(pt);   // now open the form; location is already confirmed
 }
 function placeAtCenter(){ if(!view||!view.center)return; const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
 /* nearest-parcel address lookup (mirrors the Field Maps parcel logic) */
@@ -1418,7 +1404,7 @@ function applyActivity(){
 }
 // downscale a captured photo to speed up upload: 1600px long edge, JPEG ~80%.
 // Returns a Promise<File>; on any failure it resolves the ORIGINAL so a save never breaks.
-const PHOTO_MAXEDGE=1600, PHOTO_QUALITY=0.8;
+const PHOTO_MAXEDGE=1400, PHOTO_QUALITY=0.72;
 function resizeImage(file){
   return new Promise(resolve=>{
     try{
