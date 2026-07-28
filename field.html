@@ -1143,7 +1143,7 @@ function editInsp(idx){
 
 /* ------------- EDIT tree ------------- */
 function openEditTree(){
-  const g=selectedGraphic; if(!g)return; const a=g.attributes;
+  const g=selectedGraphic; if(!g)return; const a=g.attributes; editPhotoFile=null;
   capturePreEdit(a);
   derived={SPECIES2:a.SPECIES2, FAMILY:a.FAMILY, HEIGHT:a.HEIGHT, CROWNDIAM:a.CROWNDIAM, AGECLASS:a.AGECLASS, GRID:a.GRID, X:a.X, Y:a.Y};
   setHead('TREE · EDIT CURRENT STATE',val(a.COMMON)!=='—'?a.COMMON:'Tree','Overwrites the persistent tree record',healthColor(a.OVERHEAL));
@@ -1156,6 +1156,7 @@ function openEditTree(){
     <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(a.PESTDISEAS==null?'':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
     <div class="field"><label>Comments (persistent)</label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
+    <div class="field"><label>Add photo</label><label class="photo" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="e_photolabel">Tap to capture / attach photo</div></label></div>
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
     <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
@@ -1269,6 +1270,8 @@ function saveTree(){
       if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
       treeLayer.refresh(); bumpDay('edit');
       rememberLastTree(g.attributes);   // copyable for 'Same as last tree'
+      // attach a photo added during the edit to the tree point (best-effort, non-blocking)
+      if(editPhotoFile){ const toid=g.attributes[treeLayer.objectIdField]; if(toid!=null) addTreePhoto(toid, editPhotoFile).catch(()=>{}); editPhotoFile=null; }
       // writePriorLog decides: a same-session correction updates the existing record (no new log);
       // a genuine later re-inspection carries history forward and opens a fresh inspection note.
       writePriorLog(g).then(kind=>{
@@ -1386,7 +1389,7 @@ function saveNewTree(){
 }
 
 /* ------------- INSPECTION ------------- */
-let photoFile=null, editingInsp=null, resyncSnapshot=false, newPhotoFile=null;
+let photoFile=null, editingInsp=null, resyncSnapshot=false, newPhotoFile=null, editPhotoFile=null;
 let lastTreeAttrs=null;   // attributes of the last tree added/edited this session (for 'Same as last tree')
 function resyncFromTree(){
   const a=selectedGraphic&&selectedGraphic.attributes; if(!a)return;
@@ -1483,6 +1486,19 @@ function resizeImage(file){
       img.onerror=()=>{ URL.revokeObjectURL(url); resolve(file); };
       img.src=url;
     }catch(e){ resolve(file); }
+  });
+}
+function onEditPhoto(ev){
+  const f0=ev.target.files&&ev.target.files[0]; if(!f0)return;
+  const w=document.getElementById('e_photowrap'); w.classList.add('has');
+  let prev=document.getElementById('e_photoprev');
+  if(!prev){ prev=document.createElement('div'); prev.id='e_photoprev'; w.appendChild(prev); }
+  prev.innerHTML='<div class="fn">Processing photo…</div>';
+  resizeImage(f0).then(f=>{
+    editPhotoFile=f;
+    const r=new FileReader();
+    r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · ${Math.round((f.size||0)/1024)} KB · attached</div>`; };
+    r.readAsDataURL(f);
   });
 }
 function onNewPhoto(ev){
