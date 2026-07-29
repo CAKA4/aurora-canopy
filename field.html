@@ -206,6 +206,8 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .photocell .fn{font-size:10px;margin:2px 0 4px}
 .rmphoto{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .photolabel-multi{font-size:11px;color:var(--muted);margin-top:6px}
+.liblink{text-align:center;font-size:12.5px;color:var(--brand);margin-top:8px;cursor:pointer;text-decoration:underline}
+.clearbtn{background:none;border:1px solid var(--line);color:var(--muted);font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;cursor:pointer}
 
 /* buttons */
 .actions{display:flex;gap:10px;margin-top:18px;position:sticky;bottom:0;background:linear-gradient(to top,var(--panel) 78%,transparent);padding:12px 0 4px}
@@ -1162,8 +1164,8 @@ function openEditTree(){
     <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(a.PESTDISEAS==null?'':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
-    <div class="field"><label>Comments (persistent)</label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
-    <div class="field"><label>Add photo</label><label class="photo" id="e_photowrap"><input type="file" accept="image/*" multiple id="e_photo" onchange="onEditPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="e_photolabel">Tap to add photos (you can add several)</div></label></div>
+    <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
+    <div class="field"><label>Add photo</label><label class="photo" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="e_photolabel">Tap to take a photo</div></label><input type="file" accept="image/*" multiple id="e_photolib" onchange="onEditPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('e_photolib').click()">or attach from library</div></div>
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
     <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
@@ -1262,6 +1264,7 @@ function writePriorLog(g){
     return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); return 'reinspection'; }).catch(()=>'reinspection');
   }).catch(()=>'reinspection');
 }
+function clearComments(){ const t=document.getElementById('e_COMMENTS'); if(t){ t.value=''; markChanged(t); t.focus(); } }
 function saveTree(){
   const g=selectedGraphic; if(!g)return;
   ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','FAILPOTE','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
@@ -1319,7 +1322,7 @@ function openNewTree(pt){
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
     <div class="field"><label>Comments</label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="n_photowrap"><input type="file" accept="image/*" multiple id="n_photo" onchange="onNewPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="n_photolabel">Tap to add photos (you can add several)</div></label></div>
+    <div class="field"><label>Photo</label><label class="photo" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="n_photolabel">Tap to take a photo</div></label><input type="file" accept="image/*" multiple id="n_photolib" onchange="onNewPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('n_photolib').click()">or attach from library</div></div>
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
   openSheet();
@@ -1427,7 +1430,7 @@ function openInspection(g,preset,editRec){
     <div class="grp-snapnote treenote hide">🔒 <b>Condition &amp; defects are pulled from the tree record.</b> To change them, go Back → <b>Edit tree</b> first, then log the inspection.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
     <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
     <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" multiple id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to add photos (you can add several)</div></label></div>
+    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to take a photo</div></label><input type="file" accept="image/*" multiple id="i_photolib" onchange="onPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('i_photolib').click()">or attach from library</div></div>
     <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
     <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
       <div class="frow"><div class="field"><label>Structural</label><div class="locked" id="lk_struct">${esc(dval(editRec?R.Structdefe_at_inspection:a.STRUDEFE))}</div></div><div class="field"><label>Wound / canker</label><div class="locked" id="lk_wound">${esc(dval(editRec?R.Woundcank_at_inspection:a.WOUNCANK))}</div></div></div>
