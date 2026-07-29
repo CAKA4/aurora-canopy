@@ -1476,7 +1476,7 @@ function saveNewTree(){
     DATE_NEW:Date.now(), DATE_:Date.now(), INSPECTR:(currentInspector||null),
     ...( (treeDateField && treeDateField!=='DATE_NEW') ? {[treeDateField]:Date.now()} : {} )
   }});
-  treeLayer.applyEdits({addFeatures:[g]}).then(r=>{
+  applyEditsWithRetry(treeLayer, {addFeatures:[g]}, 2).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     clearProvisional(); if(addMode)toggleAdd(); treeLayer.refresh(); bumpDay('add');
     const _np=newPhotoFiles.slice(); window._newTreeOid=res.objectId;
@@ -1485,7 +1485,28 @@ function saveNewTree(){
   }).then(q=>{
     const ng=q.features[0]; treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
     toast('Tree created — log its first activity','ok'); openInspection(ng,'Inspection');
-  }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Create tree';} toast('Create failed: '+(err.message||err),'err'); });
+  }).catch(err=>{
+    if(btn){btn.disabled=false; btn.textContent='Create tree';}
+    const msg=(err&&(err.message||err.name))||String(err);
+    // network-type failures: tell the user their work is safe to retry, don't lose the form
+    if(/load failed|network|failed to fetch|timeout/i.test(msg)){
+      toast('No connection — check signal and tap Create tree again','warn');
+    } else {
+      toast('Create failed: '+msg,'err');
+    }
+  });
+  });
+}
+// applyEdits with a small automatic retry for transient network / token failures
+function applyEditsWithRetry(layer, edits, tries){
+  tries = tries||1;
+  return layer.applyEdits(edits).catch(err=>{
+    const msg=(err&&(err.message||err.name))||String(err);
+    const transient=/load failed|network|failed to fetch|timeout|429|500|502|503|504/i.test(msg);
+    if(tries>1 && transient){
+      return new Promise(res=>setTimeout(res, 900)).then(()=>applyEditsWithRetry(layer, edits, tries-1));
+    }
+    throw err;
   });
 }
 
