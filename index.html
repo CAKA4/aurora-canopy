@@ -689,7 +689,7 @@ function photoCreator(event){
   const logsBox=document.createElement('div'); wrap.appendChild(logsBox);
   const photoBox=document.createElement('div'); wrap.appendChild(photoBox);
   const fmtD=v=>{ if(v==null||v==='')return null; const d=new Date(v); return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10); };
-  const findDate=o=>{ if(o[treeDateField]!=null&&o[treeDateField]!=='')return o[treeDateField]; if(o.DATE!=null&&o.DATE!=='')return o.DATE; for(const k in o){ if(k.toLowerCase()==='date'&&o[k]!=null&&o[k]!=='')return o[k]; } return null; };
+  const findDate=o=>{ if(o.DATE_NEW!=null&&o.DATE_NEW!=='')return o.DATE_NEW; if(o[treeDateField]!=null&&o[treeDateField]!=='')return o[treeDateField]; if(o.DATE!=null&&o.DATE!=='')return o.DATE; for(const k in o){ if(k.toLowerCase()==='date'&&o[k]!=null&&o[k]!=='')return o[k]; } return null; };
   const logDate=R=>{ if(inspDateField&&R[inspDateField]!=null&&R[inspDateField]!=='')return R[inspDateField]; const c=[R.inspection_date,R.ACTIVITY_DATE,R.DATE]; for(const v of c){ if(v!=null&&v!=='')return v; } return null; };
   const blank=v=>v==null||String(v).trim()===''||String(v).trim().toLowerCase()==='null';
   const tbl=rows=>{ let h='<table class="pop-tbl">'; rows.forEach(r=>{ if(!blank(r[1])) h+='<tr><td>'+r[0]+'</td><td>'+esc(r[1])+'</td></tr>'; }); return h+'</table>'; };
@@ -2094,7 +2094,7 @@ function closeReport(){ document.getElementById('reportOverlay').classList.remov
 function buildTreeReportHTML(a, lon, lat, photo, logs, createF, editF, nPhotos){
   const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const fmtD=v=>{ if(v==null||v==='')return ''; const d=new Date(v); return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10); };
-  const findDate=o=>{ if(treeDateField&&o[treeDateField]!=null&&o[treeDateField]!=='')return o[treeDateField]; if(o.DATE!=null&&o.DATE!=='')return o.DATE; return null; };
+  const findDate=o=>{ if(o.DATE_NEW!=null&&o.DATE_NEW!=='')return o.DATE_NEW; if(treeDateField&&o[treeDateField]!=null&&o[treeDateField]!=='')return o[treeDateField]; if(o.DATE!=null&&o.DATE!=='')return o.DATE; return null; };
   const row=(k,v)=>(v==null||String(v).trim()===''||String(v).trim().toLowerCase()==='null')?'':'<tr><td class="k">'+E(k)+'</td><td>'+E(v)+'</td></tr>';
   const details='<table class="rt">'+[row('Tree #',a.TREENUM_NEW),row('Common name',a.COMMON),row('Species',a.SPECIES2),row('Genus',a.GENERA),row('Family',a.FAMILY),row('DBH (cm)',a.DBH),row('Height (m)',a.HEIGHT),row('Crown (m)',a.CROWNDIAM),row('Age class',a.AGECLASS),row('Site',a.SITELOCA),row('Address',a.ADDRESS),row('Park',a.PARKNAM),row('Grid',a.GRID),row('Inspector',a.INSPECTR),row('Last inspected',fmtD(findDate(a)))].join('')+'</table>';
   const cond='<table class="rt">'+[row('Overall health',a.OVERHEAL),row('Structural',a.STRUDEFE),row('Wound / canker',a.WOUNCANK),row('Dead / decay',a.DEADDECAY),row('Failure potential',a.FAILPOTE),row('Pest / disease',a.PESTDISEAS),row('Impediment',a.IMPEDMNT),row('Recommended',a.RECOTREA)].join('')+'</table>';
