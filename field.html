@@ -90,6 +90,21 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 /* ---- bottom sheet ---- */
 #scrim{position:absolute;inset:0;z-index:1500;background:rgba(6,9,12,.5);opacity:0;pointer-events:none;transition:opacity .2s}
 #scrim.show{opacity:1;pointer-events:auto}
+/* ---- light form panel for outdoor readability (map/tools stay dark) ---- */
+#sheet, #picker, #confirmWrap .box, #identity .idcard{
+  --panel:#F4F6F8; --panel2:#E7ECF0; --line:#C4CED6; --text:#12202B; --muted:#4A5A67; --form:#FFFFFF;
+}
+#sheet .sheet-head .eyebrow, #sheet .slabel, #sheet .attr .k, #sheet .field label{ color:#3A4A57; }
+#sheet .attr .v, #sheet .sheet-head h2{ color:#12202B; }
+#sheet .locked{ background:#EEF2F5; color:#12202B; }
+#sheet .treenote{ background:#EAF0F4; color:#33424E; }
+#sheet .note{ background:#EAF0F4; color:#33424E; }
+#sheet .insp{ background:#EDF1F4; }
+#sheet .empty{ color:#4A5A67; }
+#picker .pickbox{ background:#F4F6F8; }
+#picker .pickitem{ color:#12202B; border-bottom-color:#D4DCE2; }
+#picker .pickitem.cur{ background:rgba(44,122,84,.14); }
+#picker #pickTitle{ color:#4A5A67; }
 #sheet{position:absolute;z-index:1600;left:0;right:0;bottom:0;margin:0 auto;max-width:var(--sheet-max);
   background:var(--panel);border-radius:20px 20px 0 0;border:1px solid var(--line);border-bottom:none;
   transform:translateY(102%);transition:transform .26s cubic-bezier(.4,.9,.3,1);
@@ -207,6 +222,15 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .rmphoto{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .photolabel-multi{font-size:11px;color:var(--muted);margin-top:6px}
 .liblink{text-align:center;font-size:12.5px;color:var(--brand);margin-top:8px;cursor:pointer;text-decoration:underline}
+.photobtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;
+  background:#1E6FD0;border:2px solid #1A62B8;border-radius:14px;color:#fff;padding:16px 12px;cursor:pointer;margin:2px 0 6px}
+.photobtn:active{transform:translateY(1px)}
+.photobtn.has{background:#155CB0}
+.photobtn svg{width:30px;height:30px}
+.photobtn .big{font-size:18px;font-weight:700;letter-spacing:.01em}
+.photobtn .sm{font-size:12px;opacity:.9;font-weight:500}
+.photoblock{margin-bottom:6px}
+.photoblock .liblink{color:#1E6FD0}
 .clearbtn{background:none;border:1px solid var(--line);color:var(--muted);font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;cursor:pointer}
 
 /* buttons */
@@ -683,7 +707,17 @@ function lastInvDate(a){
   if(v==null||v===''){ for(const k in a){ if(k.toLowerCase()==='date' && a[k]!=null && a[k]!==''){ v=a[k]; break; } } }
   return (v!=null&&v!=='')?fmtDate(v):'—';
 }
-function options(dkey,current,blank){const d=DOMAINS[dkey]||{};let h=blank?'<option value="">—</option>':'';for(const c in d){h+=`<option value="${esc(c)}"${current===c?' selected':''}>${esc(d[c])}</option>`;}return h;}
+function options(dkey,current,blank){
+  const d=DOMAINS[dkey]||{};
+  const cur=(current==null?'':String(current));
+  // does the current value exactly match a domain key?
+  let matched=false; for(const c in d){ if(String(c)===cur){ matched=true; break; } }
+  let h=blank?'<option value="">\u2014</option>':'';
+  // if the tree already has a value that isn't in the domain list, show it (selected) so its real data appears
+  if(cur!=='' && !matched){ h+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`; }
+  for(const c in d){ h+=`<option value="${esc(c)}"${cur===String(c)?' selected':''}>${esc(d[c])}</option>`; }
+  return h;
+}
 /* ---- species master list (from the official taxonomy table) + rapid-entry recents ---- */
 let taxoRows=[], taxoMap={}, recentSpecies=[], recentDbh=[], speciesFreq={}, dbhFreq={};
 // restore usage frequencies so commonly-entered species/DBH stay at the top of the list across sessions
@@ -1156,6 +1190,7 @@ function openEditTree(){
   derived={SPECIES2:a.SPECIES2, FAMILY:a.FAMILY, HEIGHT:a.HEIGHT, CROWNDIAM:a.CROWNDIAM, AGECLASS:a.AGECLASS, GRID:a.GRID, X:a.X, Y:a.Y};
   setHead('TREE · EDIT CURRENT STATE',val(a.COMMON)!=='—'?a.COMMON:'Tree','Overwrites the persistent tree record',healthColor(a.OVERHEAL));
   document.getElementById('shBody').innerHTML=`
+    <div class="photoblock"><label class="photobtn" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="e_photolib" onchange="onEditPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('e_photolib').click()">or attach from library</div><div id="e_photoprev" class="photogrid"></div></div>
     <div class="field"><label>Species — common name</label><input readonly class="pickfield" id="e_COMMON" value="${esc(a.COMMON==='None'?'':a.COMMON||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('e_COMMON')"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="e_DBH" value="${esc(a.DBH??'')}" placeholder="Tap to choose DBH" onclick="openDbhPicker('e_DBH')"></div>
     <div class="field"><label>Overall health</label><select id="e_OVERHEAL" onchange="onHealthChange('e')">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
@@ -1166,7 +1201,7 @@ function openEditTree(){
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
     <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
-    <div class="field"><label>Add photo</label><label class="photo" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="e_photolabel">Tap to take a photo</div></label><input type="file" accept="image/*" multiple id="e_photolib" onchange="onEditPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('e_photolib').click()">or attach from library</div></div>
+    
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
     <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
@@ -1284,7 +1319,9 @@ function onHealthChange(prefix){
     setPick('IMPEDMNT','None','None');
     // Recommended treatment: set explicitly to "No Treatment" (not blank)
     const rt=document.getElementById(prefix+'_RECOTREA'); if(rt){ rt.value='No Treatment'; markChanged(rt); }
-    if(typeof toast==='function') toast('Defect fields cleared for a non-living tree','ok');
+    // Comments describe the living tree — clear them for a removed/stump record
+    const cm=document.getElementById(prefix+'_COMMENTS'); if(cm){ cm.value=''; markChanged(cm); }
+    if(typeof toast==='function') toast('Defect fields and comments cleared for a non-living tree','ok');
   }catch(e){ /* never let this block the form */ }
 }
 function clearComments(){ const t=document.getElementById('e_COMMENTS'); if(t){ t.value=''; markChanged(t); t.focus(); } }
@@ -1334,6 +1371,7 @@ function openNewTree(pt){
   setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
   document.getElementById('shBody').innerHTML=`
     ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
+    <div class="photoblock"><label class="photobtn" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="n_photolib" onchange="onNewPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('n_photolib').click()">or attach from library</div><div id="n_photoprev" class="photogrid"></div></div>
     <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
     <div class="field"><label>Overall health</label><select id="n_OVERHEAL" onchange="onHealthChange('n')">${options('OVERHEAL','Good',false)}</select></div>
@@ -1345,7 +1383,7 @@ function openNewTree(pt){
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
     <div class="field"><label>Comments</label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="n_photolabel">Tap to take a photo</div></label><input type="file" accept="image/*" multiple id="n_photolib" onchange="onNewPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('n_photolib').click()">or attach from library</div></div>
+    
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
   openSheet();
