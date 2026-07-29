@@ -200,6 +200,12 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .photo.has{border-style:solid;border-color:var(--brand);padding:8px}
 .photo img{max-height:130px;border-radius:8px;display:block;margin:0 auto}
 .photo .fn{font-size:12px;color:var(--good);margin-top:6px;font-weight:600}
+.photogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.photocell{position:relative;background:var(--panel);border-radius:8px;overflow:hidden;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.photocell img{width:100%;height:88px;object-fit:cover;border-radius:8px;display:block;margin:0}
+.photocell .fn{font-size:10px;margin:2px 0 4px}
+.rmphoto{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.photolabel-multi{font-size:11px;color:var(--muted);margin-top:6px}
 
 /* buttons */
 .actions{display:flex;gap:10px;margin-top:18px;position:sticky;bottom:0;background:linear-gradient(to top,var(--panel) 78%,transparent);padding:12px 0 4px}
@@ -1143,7 +1149,7 @@ function editInsp(idx){
 
 /* ------------- EDIT tree ------------- */
 function openEditTree(){
-  const g=selectedGraphic; if(!g)return; const a=g.attributes; editPhotoFile=null;
+  const g=selectedGraphic; if(!g)return; const a=g.attributes; editPhotoFiles=[];
   capturePreEdit(a);
   derived={SPECIES2:a.SPECIES2, FAMILY:a.FAMILY, HEIGHT:a.HEIGHT, CROWNDIAM:a.CROWNDIAM, AGECLASS:a.AGECLASS, GRID:a.GRID, X:a.X, Y:a.Y};
   setHead('TREE · EDIT CURRENT STATE',val(a.COMMON)!=='—'?a.COMMON:'Tree','Overwrites the persistent tree record',healthColor(a.OVERHEAL));
@@ -1154,9 +1160,10 @@ function openEditTree(){
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
     <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
     <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(a.PESTDISEAS==null?'':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
     <div class="field"><label>Comments (persistent)</label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
-    <div class="field"><label>Add photo</label><label class="photo" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="e_photolabel">Tap to capture / attach photo</div></label></div>
+    <div class="field"><label>Add photo</label><label class="photo" id="e_photowrap"><input type="file" accept="image/*" multiple id="e_photo" onchange="onEditPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="e_photolabel">Tap to add photos (you can add several)</div></label></div>
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
     <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
@@ -1259,6 +1266,7 @@ function saveTree(){
   const g=selectedGraphic; if(!g)return;
   ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','FAILPOTE','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
   g.attributes.PESTDISEAS=gvField('e_PESTDISEAS');
+  g.attributes.IMPEDMNT=gvField('e_IMPEDMNT');
   g.attributes.DBH=gv('e_DBH')===''?null:parseFloat(gv('e_DBH'));
   Object.assign(derived, dbhDerived(gv('e_DBH')));
   recordSpecies(gv('e_COMMON')); if(gv('e_DBH')!=='') recordDbh(parseFloat(gv('e_DBH')));
@@ -1266,12 +1274,20 @@ function saveTree(){
   Promise.resolve(taxoLookup(gv('e_COMMON')).then(t=>Object.assign(derived,t))).then(()=>{
     Object.assign(g.attributes, {HEIGHT:derived.HEIGHT, CROWNDIAM:derived.CROWNDIAM, AGECLASS:derived.AGECLASS,
       SPECIES2:derived.SPECIES2, FAMILY:derived.FAMILY, GRID:derived.GRID, X:derived.X, Y:derived.Y});
+    // stamp the inspection date to today so the tree shows "last inspected today", appears in the
+    // today filter, and drops out of the yellow "not visited" highlight. Set BOTH date fields —
+    // exactly like the new-tree save does (which is why new trees already show correctly).
+    g.attributes.DATE_NEW=Date.now();
+    g.attributes.DATE_=Date.now();
+    if(treeDateField && treeDateField!=='DATE_NEW' && treeDateField!=='DATE_') g.attributes[treeDateField]=Date.now();
+    g.attributes.INSPECTR=currentInspector||g.attributes.INSPECTR||null;
     treeLayer.applyEdits({updateFeatures:[g]}).then(r=>{
       if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
-      treeLayer.refresh(); bumpDay('edit');
+      treeLayer.refresh(); if(highlightLayer) highlightLayer.refresh();   // drop the yellow halo now that it's visited
+      bumpDay('edit');
       rememberLastTree(g.attributes);   // copyable for 'Same as last tree'
       // attach a photo added during the edit to the tree point (best-effort, non-blocking)
-      if(editPhotoFile){ const toid=g.attributes[treeLayer.objectIdField]; if(toid!=null) addTreePhoto(toid, editPhotoFile).catch(()=>{}); editPhotoFile=null; }
+      if(editPhotoFiles.length){ const toid=g.attributes[treeLayer.objectIdField]; if(toid!=null) addPhotosTo(treeLayer, toid, editPhotoFiles).catch(()=>{}); editPhotoFiles=[]; }
       // writePriorLog decides: a same-session correction updates the existing record (no new log);
       // a genuine later re-inspection carries history forward and opens a fresh inspection note.
       writePriorLog(g).then(kind=>{
@@ -1288,7 +1304,7 @@ function saveTree(){
 
 /* ------------- NEW tree ------------- */
 function openNewTree(pt){
-  derived={}; newPhotoFile=null;
+  derived={}; newPhotoFiles=[];
   setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
   document.getElementById('shBody').innerHTML=`
     ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
@@ -1303,7 +1319,7 @@ function openNewTree(pt){
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
     <div class="field"><label>Comments</label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="n_photolabel">Tap to capture / attach photo</div></label></div>
+    <div class="field"><label>Photo</label><label class="photo" id="n_photowrap"><input type="file" accept="image/*" multiple id="n_photo" onchange="onNewPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="n_photolabel">Tap to add photos (you can add several)</div></label></div>
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
   openSheet();
@@ -1378,8 +1394,8 @@ function saveNewTree(){
   treeLayer.applyEdits({addFeatures:[g]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     clearProvisional(); if(addMode)toggleAdd(); treeLayer.refresh(); bumpDay('add');
-    const _np=newPhotoFile; window._newTreeOid=res.objectId;
-    const attach = _np ? addTreePhotoFrom('n_photo', res.objectId, _np).catch(()=>{}) : Promise.resolve();
+    const _np=newPhotoFiles.slice(); window._newTreeOid=res.objectId;
+    const attach = _np.length ? addPhotosTo(treeLayer, res.objectId, _np).catch(()=>{}) : Promise.resolve();
     return attach.then(()=> treeLayer.queryFeatures({objectIds:[res.objectId], outFields:["*"]}));
   }).then(q=>{
     const ng=q.features[0]; treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
@@ -1389,7 +1405,7 @@ function saveNewTree(){
 }
 
 /* ------------- INSPECTION ------------- */
-let photoFile=null, editingInsp=null, resyncSnapshot=false, newPhotoFile=null, editPhotoFile=null;
+let photoFiles=[], editingInsp=null, resyncSnapshot=false, newPhotoFiles=[], editPhotoFiles=[];
 let lastTreeAttrs=null;   // attributes of the last tree added/edited this session (for 'Same as last tree')
 function resyncFromTree(){
   const a=selectedGraphic&&selectedGraphic.attributes; if(!a)return;
@@ -1400,7 +1416,7 @@ function resyncFromTree(){
   resyncSnapshot=true; toast('Snapshot re-synced from tree — save to apply','ok');
 }
 function openInspection(g,preset,editRec){
-  g=g||selectedGraphic; if(!g)return; selectedGraphic=g; const a=g.attributes; photoFile=null;
+  g=g||selectedGraphic; if(!g)return; selectedGraphic=g; const a=g.attributes; photoFiles=[];
   editingInsp = editRec||null; resyncSnapshot=false;
   const R = editRec||{};
   setHead(editRec?'TREE LOG · EDIT':'TREE LOG · NEW',val(a.COMMON)!=='—'?a.COMMON:'Tree',
@@ -1411,7 +1427,7 @@ function openInspection(g,preset,editRec){
     <div class="grp-snapnote treenote hide">🔒 <b>Condition &amp; defects are pulled from the tree record.</b> To change them, go Back → <b>Edit tree</b> first, then log the inspection.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
     <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
     <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to capture / attach photo</div></label></div>
+    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" multiple id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to add photos (you can add several)</div></label></div>
     <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
     <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
       <div class="frow"><div class="field"><label>Structural</label><div class="locked" id="lk_struct">${esc(dval(editRec?R.Structdefe_at_inspection:a.STRUDEFE))}</div></div><div class="field"><label>Wound / canker</label><div class="locked" id="lk_wound">${esc(dval(editRec?R.Woundcank_at_inspection:a.WOUNCANK))}</div></div></div>
@@ -1488,45 +1504,38 @@ function resizeImage(file){
     }catch(e){ resolve(file); }
   });
 }
-function onEditPhoto(ev){
-  const f0=ev.target.files&&ev.target.files[0]; if(!f0)return;
-  const w=document.getElementById('e_photowrap'); w.classList.add('has');
-  let prev=document.getElementById('e_photoprev');
-  if(!prev){ prev=document.createElement('div'); prev.id='e_photoprev'; w.appendChild(prev); }
-  prev.innerHTML='<div class="fn">Processing photo…</div>';
-  resizeImage(f0).then(f=>{
-    editPhotoFile=f;
-    const r=new FileReader();
-    r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · ${Math.round((f.size||0)/1024)} KB · attached</div>`; };
-    r.readAsDataURL(f);
+// shared multi-photo handler: resize each selected file, append to the target array, render thumbnails.
+// wrapId/prevId identify the DOM; getArr returns the backing array (photoFiles / newPhotoFiles / editPhotoFiles).
+function handlePhotos(ev, wrapId, prevId, arr){
+  const files=Array.from(ev.target.files||[]); if(!files.length)return;
+  const w=document.getElementById(wrapId); if(w) w.classList.add('has');
+  let prev=document.getElementById(prevId);
+  if(!prev){ prev=document.createElement('div'); prev.id=prevId; prev.className='photogrid'; if(w) w.appendChild(prev); }
+  ev.target.value='';                     // allow re-selecting/adding more later
+  files.forEach(f0=>{
+    const cell=document.createElement('div'); cell.className='photocell';
+    cell.innerHTML='<div class="fn">…</div>'; prev.appendChild(cell);
+    resizeImage(f0).then(f=>{
+      arr.push(f);
+      const idx=arr.length-1;
+      const r=new FileReader();
+      r.onload=e=>{ cell.innerHTML=`<img src="${e.target.result}"><button type="button" class="rmphoto" title="Remove" data-arr="${prevId}" data-i="${idx}">✕</button><div class="fn">${Math.round((f.size||0)/1024)} KB</div>`; };
+      r.readAsDataURL(f);
+    });
   });
 }
-function onNewPhoto(ev){
-  const f0=ev.target.files&&ev.target.files[0]; if(!f0)return;
-  const w=document.getElementById('n_photowrap'); w.classList.add('has');
-  let prev=document.getElementById('n_photoprev');
-  if(!prev){ prev=document.createElement('div'); prev.id='n_photoprev'; w.appendChild(prev); }
-  prev.innerHTML='<div class="fn">Processing photo…</div>';
-  resizeImage(f0).then(f=>{
-    newPhotoFile=f;
-    const r=new FileReader();
-    r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · ${Math.round((f.size||0)/1024)} KB · attached</div>`; };
-    r.readAsDataURL(f);
-  });
-}
-function onPhoto(ev){
-  const f0=ev.target.files&&ev.target.files[0]; if(!f0)return;
-  const w=document.getElementById('i_photowrap'); w.classList.add('has');
-  let prev=document.getElementById('i_photoprev');
-  if(!prev){ prev=document.createElement('div'); prev.id='i_photoprev'; w.appendChild(prev); }
-  prev.innerHTML='<div class="fn">Processing photo…</div>';
-  resizeImage(f0).then(f=>{
-    photoFile=f;
-    const r=new FileReader();
-    r.onload=e=>{ prev.innerHTML=`<img src="${e.target.result}"><div class="fn">${esc(f.name)} · ${Math.round((f.size||0)/1024)} KB · attached</div>`; };
-    r.readAsDataURL(f);
-  });
-}
+function onEditPhoto(ev){ handlePhotos(ev,'e_photowrap','e_photoprev',editPhotoFiles); }
+function onNewPhoto(ev){ handlePhotos(ev,'n_photowrap','n_photoprev',newPhotoFiles); }
+function onPhoto(ev){ handlePhotos(ev,'i_photowrap','i_photoprev',photoFiles); }
+// remove a thumbnail (marks the slot null; upload loops skip nulls)
+document.addEventListener('click', function(e){
+  const b=e.target.closest && e.target.closest('.rmphoto'); if(!b)return;
+  e.preventDefault();
+  const which=b.getAttribute('data-arr'); const i=parseInt(b.getAttribute('data-i'),10);
+  const arr = which==='e_photoprev'?editPhotoFiles : which==='n_photoprev'?newPhotoFiles : photoFiles;
+  if(arr && i>=0 && i<arr.length) arr[i]=null;
+  const cell=b.closest('.photocell'); if(cell) cell.remove();
+});
 function buildInspectionAttrs(gid){
   const act=gv('i_activity');
   const a=(selectedGraphic&&selectedGraphic.attributes)||{};
@@ -1570,7 +1579,7 @@ function submitInspection(){
   }
 
   if(!navigator.onLine){
-    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile, treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{
+    Buffer.add({layer:'insp', attributes:attrs, photos:photoFiles.slice(), treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{
       Buffer.count().then(updateQueueBadge);
       if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;treeLayer.refresh();}
       toast('Offline — log saved on device','warn'); closeSheet();
@@ -1578,22 +1587,22 @@ function submitInspection(){
     return;
   }
   const feature=new GraphicC({attributes:attrs});
-  const _photoAtSave=photoFile;   // capture now; the form may be torn down before the promises resolve
+  const _photoAtSave=photoFiles.slice();   // capture now; the form may be torn down before the promises resolve
   inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     bumpDay('log');
-    if(_photoAtSave){
-      // attach to BOTH the inspection record and the tree point (mirrors Field Maps)
+    if(_photoAtSave && _photoAtSave.length){
+      // attach every photo to BOTH the inspection record and the tree point (mirrors Field Maps)
       const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
-      return addPhoto(res.objectId, _photoAtSave)
-        .then(()=> treeOid!=null ? addTreePhoto(treeOid, _photoAtSave).catch(()=>{}) : null);
+      return addPhotosTo(inspLayer, res.objectId, _photoAtSave)
+        .then(()=> treeOid!=null ? addPhotosTo(treeLayer, treeOid, _photoAtSave).catch(()=>{}) : null);
     }
   }).then(()=>{
     if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
       treeLayer.applyEdits({updateFeatures:[g]}).then(()=>treeLayer.refresh());}
     toast('Log saved','ok'); closeSheet();
   }).catch(err=>{
-    Buffer.add({layer:'insp', attributes:attrs, photo:photoFile, treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');closeSheet();});
+    Buffer.add({layer:'insp', attributes:attrs, photos:photoFiles.slice(), treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');closeSheet();});
   });
 }
 // Build a form holding the file (ArcGIS JS 4.x addAttachment needs an HTMLFormElement, not FormData).
@@ -1604,6 +1613,11 @@ function _photoForm(file){
   try{ const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; }catch(e){}
   form.appendChild(input);
   return form;
+}
+// attach many photos (array, may contain nulls from removed thumbnails) to one feature, in sequence
+function addPhotosTo(layer, oid, files){
+  const list=(files||[]).filter(Boolean);
+  return list.reduce((chain,f)=>chain.then(()=>addPhotoTo(layer,oid,f).catch(()=>{})), Promise.resolve());
 }
 function addPhotoTo(layer, oid, file){
   if(!layer||oid==null||!file) return Promise.resolve();
@@ -1640,7 +1654,8 @@ function flushQueue(){
       inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
         const res=r.addFeatureResults[0]; if(res.error) throw res.error;
         bumpDay('log');
-        if(it.photo){ return addPhoto(res.objectId, it.photo).then(()=> it.treeOid!=null ? addTreePhoto(it.treeOid, it.photo).catch(()=>{}) : null); }
+        if(it.photos&&it.photos.length){ return addPhotosTo(inspLayer, res.objectId, it.photos).then(()=> it.treeOid!=null ? addPhotosTo(treeLayer, it.treeOid, it.photos).catch(()=>{}) : null); }
+        else if(it.photo){ return addPhoto(res.objectId, it.photo).then(()=> it.treeOid!=null ? addTreePhoto(it.treeOid, it.photo).catch(()=>{}) : null); }
       }).then(()=>Buffer.remove(it.id)).then(()=>{Buffer.count().then(updateQueueBadge);next(i+1);})
       .catch(()=>next(i+1)); // leave in buffer, try later
     })(0);
