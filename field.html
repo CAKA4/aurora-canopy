@@ -837,6 +837,8 @@ function openDbhPicker(id){ openPicker({title:'DBH (cm)', items:dbhList(), value
 function gv(id){const el=document.getElementById(id);return el?el.value:'';}
 // value stored for a field: use the code kept in data-val when present (impediment codes ≠ labels), else the visible value
 function gvField(id){ const el=document.getElementById(id); if(!el)return ''; const dv=el.getAttribute('data-val'); return dv!=null?dv:el.value; }
+// treat null, empty, 'None', 'null' (any case) and whitespace as an unset value
+function isUnset(v){ if(v==null) return true; const s=String(v).trim().toLowerCase(); return s===''||s==='none'||s==='null'; }
 function domLabel(dkey, code){ const d=DOMAINS[dkey]||{}; if(code==null||code==='')return ''; return d[code]!=null?d[code]:String(code); }
 // picklist that lets the crew pick an existing value OR add a one-off value typed in the field
 function openDomainPicker(id, dkey, title){
@@ -1198,7 +1200,7 @@ function openEditTree(){
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
     <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
     <div class="frow"><div class="field"><label>Wound / canker</label><select id="e_WOUNCANK">${options('WOUNCANK',a.WOUNCANK,true)}</select></div><div class="field"><label>Deadwood / decay</label><select id="e_DEADDECAY">${options('DEADDECAY',a.DEADDECAY,true)}</select></div></div>
-    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc((a.PESTDISEAS==null||a.PESTDISEAS==='')?'None observed':domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc((a.PESTDISEAS==null||a.PESTDISEAS==='')?'None observed':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(isUnset(a.PESTDISEAS)?'None observed':domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(isUnset(a.PESTDISEAS)?'None observed':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
     <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
