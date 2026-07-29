@@ -1200,7 +1200,7 @@ function openEditTree(){
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
     <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
     <div class="frow"><div class="field"><label>Wound / canker</label><select id="e_WOUNCANK">${options('WOUNCANK',a.WOUNCANK,true)}</select></div><div class="field"><label>Deadwood / decay</label><select id="e_DEADDECAY">${options('DEADDECAY',a.DEADDECAY,true)}</select></div></div>
-    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(isUnset(a.PESTDISEAS)?'None observed':domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(isUnset(a.PESTDISEAS)?'None observed':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
     <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
@@ -1259,7 +1259,7 @@ const CORRECTION_WINDOW_MS = 60*60*1000;   // 60 minutes
 // inspection to the corrected values (no new record). If it's a genuine later re-inspection,
 // carry the pre-edit state forward as a dated prior record (history). Returns a Promise<'correction'|'reinspection'>.
 function writePriorLog(g){
-  if(!_preEdit || !g || !inspLayer) return Promise.resolve('reinspection');
+  if(!_preEdit || !g || !inspLayer) return Promise.resolve({kind:'reinspection'});
   const gid=g.attributes.GlobalID;
   return inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}' AND activity_type IN ('Inspection','Planted')`, outFields:["*","CreationDate"], returnGeometry:false, orderByFields:["CreationDate DESC"], num:1}).then(res=>{
     const now=Date.now();
@@ -1269,26 +1269,27 @@ function writePriorLog(g){
     if(last){ const c=last.CreationDate; const d=logDate(last);
       lastMs = (c!=null? Number(c) : (d!=null? new Date(d).getTime() : null)); }
 
-    // ---- CORRECTION: the most recent inspection is very fresh -> update it in place, no new record ----
+    // ---- CORRECTION: the most recent inspection is very fresh -> reopen THAT log pre-filled with the
+    // corrected tree values so the user can review/adjust; saving updates the same record (no duplicate).
     if(last && lastMs!=null && (now-lastMs) <= CORRECTION_WINDOW_MS){
-      const oid=last[inspLayer.objectIdField];
-      const upd={ [inspLayer.objectIdField]:oid,
-        condition_at_inspection:g.attributes.OVERHEAL, Structdefe_at_inspection:g.attributes.STRUDEFE,
-        Woundcank_at_inspection:g.attributes.WOUNCANK, Deaddecay_at_inspection:g.attributes.DEADDECAY,
-        Failpote_at_inspection:g.attributes.FAILPOTE, Pestdisease_at_inspection:g.attributes.PESTDISEAS,
-        Impediment_at_inspection:g.attributes.IMPEDMNT, DBH:(g.attributes.DBH!=null?g.attributes.DBH:null),
-        recommendations:g.attributes.RECOTREA, Species:g.attributes.COMMON };
-      return inspLayer.applyEdits({updateFeatures:[{attributes:upd}]}).then(()=>'correction').catch(()=>'correction');
+      // refresh the snapshot fields on the record to the corrected tree state, then hand it back
+      const rec=Object.assign({}, last);
+      rec.condition_at_inspection=g.attributes.OVERHEAL; rec.Structdefe_at_inspection=g.attributes.STRUDEFE;
+      rec.Woundcank_at_inspection=g.attributes.WOUNCANK; rec.Deaddecay_at_inspection=g.attributes.DEADDECAY;
+      rec.Failpote_at_inspection=g.attributes.FAILPOTE; rec.Pestdisease_at_inspection=g.attributes.PESTDISEAS;
+      rec.Impediment_at_inspection=g.attributes.IMPEDMNT; rec.DBH=(g.attributes.DBH!=null?g.attributes.DBH:null);
+      rec.recommendations=g.attributes.RECOTREA; rec.Species=g.attributes.COMMON;
+      return {kind:'correction', record:rec};
     }
 
     // ---- RE-INSPECTION: meaningful time has passed -> carry the pre-edit state forward as history ----
     const oldDate=_preEdit.oldDate;
-    if(oldDate==null||oldDate==='') return 'reinspection';
+    if(oldDate==null||oldDate==='') return {kind:'reinspection'};
     if(last){
       const sameDay=fmtDate(logDate(last))===fmtDate(oldDate);
       const sameCond=String(last.condition_at_inspection==null?'':last.condition_at_inspection)===String(_preEdit.OVERHEAL==null?'':_preEdit.OVERHEAL);
       const sameDbh=String(last.DBH==null?'':last.DBH)===String(_preEdit.DBH==null?'':_preEdit.DBH);
-      if(sameDay && sameCond && sameDbh) return 'reinspection';   // already recorded — don't duplicate
+      if(sameDay && sameCond && sameDbh) return {kind:'reinspection'};   // already recorded — don't duplicate
     }
     const attrs={};
     attrs[CONFIG.fkField]=gid; attrs.activity_type='Inspection';
@@ -1300,8 +1301,8 @@ function writePriorLog(g){
     attrs.Impediment_at_inspection=_preEdit.IMPEDMNT; attrs.DBH=(_preEdit.DBH!=null?_preEdit.DBH:null);
     attrs.recommendations=_preEdit.RECOTREA; attrs.Species=_preEdit.COMMON;
     attrs.maintenance_notes='Prior recorded state, carried forward automatically before the '+today()+' update.';
-    return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); return 'reinspection'; }).catch(()=>'reinspection');
-  }).catch(()=>'reinspection');
+    return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); return {kind:'reinspection'}; }).catch(()=>({kind:'reinspection'}));
+  }).catch(()=>({kind:'reinspection'}));
 }
 // When a tree is Removed / Dead / Stump / Stump carving, its defect ratings are no longer
 // meaningful. Clear them to their blank/none value. Species, Site location and Comments are kept.
@@ -1356,9 +1357,12 @@ function saveTree(){
       if(editPhotoFiles.length){ const toid=g.attributes[treeLayer.objectIdField]; if(toid!=null) addPhotosTo(treeLayer, toid, editPhotoFiles).catch(()=>{}); editPhotoFiles=[]; }
       // writePriorLog decides: a same-session correction updates the existing record (no new log);
       // a genuine later re-inspection carries history forward and opens a fresh inspection note.
-      writePriorLog(g).then(kind=>{
-        if(kind==='correction'){
-          toast('Tree corrected','ok'); closeSheet();   // no duplicate inspection; back to the map
+      writePriorLog(g).then(result=>{
+        const kind=result&&result.kind;
+        if(kind==='correction' && result.record){
+          // reopen the ORIGINAL log, pre-filled with the corrected values — saving updates it (no new log)
+          toast('Correcting the existing log','ok');
+          openInspection(g,'Inspection',result.record,true);
         } else {
           toast('Tree updated — add your inspection note','ok');
           openInspection(g,'Inspection');
@@ -1482,9 +1486,9 @@ function resyncFromTree(){
   set('lk_dbh',a.DBH); set('lk_rec',a.RECOTREA);
   resyncSnapshot=true; toast('Snapshot re-synced from tree — save to apply','ok');
 }
-function openInspection(g,preset,editRec){
+function openInspection(g,preset,editRec,isCorrection){
   g=g||selectedGraphic; if(!g)return; selectedGraphic=g; const a=g.attributes; photoFiles=[];
-  editingInsp = editRec||null; resyncSnapshot=false;
+  editingInsp = editRec||null; resyncSnapshot=!!isCorrection;   // corrections write the updated snapshot to the existing log
   const R = editRec||{};
   setHead(editRec?'TREE LOG · EDIT':'TREE LOG · NEW',val(a.COMMON)!=='—'?a.COMMON:'Tree',
           editRec?'Updates this log record':'Records an activity against this tree',healthColor(a.OVERHEAL));
@@ -1494,7 +1498,7 @@ function openInspection(g,preset,editRec){
     <div class="grp-snapnote treenote hide">🔒 <b>Condition &amp; defects are pulled from the tree record.</b> To change them, go Back → <b>Edit tree</b> first, then log the inspection.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
     <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
     <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
-    <div class="field"><label>Photo</label><label class="photo" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.7"/></svg></div><div id="i_photolabel">Tap to take a photo</div></label><input type="file" accept="image/*" multiple id="i_photolib" onchange="onPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('i_photolib').click()">or attach from library</div></div>
+    <div class="photoblock"><label class="photobtn" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="i_photolib" onchange="onPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('i_photolib').click()">or attach from library</div><div id="i_photoprev" class="photogrid"></div></div>
     <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
     <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
       <div class="frow"><div class="field"><label>Structural</label><div class="locked" id="lk_struct">${esc(dval(editRec?R.Structdefe_at_inspection:a.STRUDEFE))}</div></div><div class="field"><label>Wound / canker</label><div class="locked" id="lk_wound">${esc(dval(editRec?R.Woundcank_at_inspection:a.WOUNCANK))}</div></div></div>
