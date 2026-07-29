@@ -1269,25 +1269,24 @@ function writePriorLog(g){
 // meaningful. Clear them to their blank/none value. Species, Site location and Comments are kept.
 const NON_LIVING_CONDITIONS = ['Removed','Dead','Stump','Stump carving'];
 function onHealthChange(prefix){
-  const h=gv(prefix+'_OVERHEAL');
-  if(NON_LIVING_CONDITIONS.indexOf(h)<0) return;   // living tree: leave everything as-is
-  const setSel=(id,val)=>{ const el=document.getElementById(id); if(el){ el.value=(val==null?'':val); markChanged(el); } };
-  const setPick=(id,code)=>{ const el=document.getElementById(id); if(el){ el.value=domLabelFor(id,code); el.setAttribute('data-val',code); markChanged(el); } };
-  // DBH -> blank
-  const dbh=document.getElementById(prefix+'_DBH'); if(dbh){ dbh.value=''; markChanged(dbh); }
-  // defect selects -> blank ('' shows the "—" option in edit; new-tree selects have no blank, so use first "no problem" value)
-  setSel(prefix+'_STRUDEFE', document.getElementById(prefix+'_STRUDEFE') && hasBlankOption(prefix+'_STRUDEFE')?'':'No problem');
-  setSel(prefix+'_WOUNCANK', hasBlankOption(prefix+'_WOUNCANK')?'':'No problem');
-  setSel(prefix+'_DEADDECAY', hasBlankOption(prefix+'_DEADDECAY')?'':'NO PROBLEM (no visible problem)');
-  setSel(prefix+'_FAILPOTE', hasBlankOption(prefix+'_FAILPOTE')?'':'Low');
-  // pest / impediment -> their "none" value
-  setPick(prefix+'_PESTDISEAS','None observed');
-  setPick(prefix+'_IMPEDMNT','None');
-  // recommended treatment -> No Treatment
-  setSel(prefix+'_RECOTREA','No Treatment');
-  toast('Defect fields cleared for a non-living tree','ok');
+  try{
+    const sel=document.getElementById(prefix+'_OVERHEAL');
+    const h=sel?sel.value:'';
+    if(NON_LIVING_CONDITIONS.indexOf(h)<0) return;   // living tree: leave everything as-is
+    const setSel=(suffix,val)=>{ const el=document.getElementById(prefix+'_'+suffix); if(el){ const blankable=Array.from(el.options||[]).some(o=>o.value===''); el.value=blankable?'':val; markChanged(el); } };
+    const setPick=(suffix,code,label)=>{ const el=document.getElementById(prefix+'_'+suffix); if(el){ el.value=label; el.setAttribute('data-val',code); markChanged(el); } };
+    // DBH is intentionally KEPT (size is useful even after removal)
+    setSel('STRUDEFE','No problem');
+    setSel('WOUNCANK','No problem');
+    setSel('DEADDECAY','NO PROBLEM (no visible problem)');
+    setSel('FAILPOTE','Low');
+    setPick('PESTDISEAS','None observed','None observed');
+    setPick('IMPEDMNT','None','None');
+    // Recommended treatment: set explicitly to "No Treatment" (not blank)
+    const rt=document.getElementById(prefix+'_RECOTREA'); if(rt){ rt.value='No Treatment'; markChanged(rt); }
+    if(typeof toast==='function') toast('Defect fields cleared for a non-living tree','ok');
+  }catch(e){ /* never let this block the form */ }
 }
-function hasBlankOption(id){ const el=document.getElementById(id); if(!el)return false; return Array.from(el.options).some(o=>o.value===''); }
 function clearComments(){ const t=document.getElementById('e_COMMENTS'); if(t){ t.value=''; markChanged(t); t.focus(); } }
 function saveTree(){
   const g=selectedGraphic; if(!g)return;
