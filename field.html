@@ -1246,6 +1246,11 @@ function deleteTree(){
   });
 }
 let _preEdit=null;
+// tracks the most recent inspection log this app wrote for each tree THIS SESSION, so a same-session
+// correction can be detected reliably without depending on the service's CreationDate field.
+// key = tree GlobalID -> { oid, ms, record }
+const _sessionLogs={};
+function noteSessionLog(gid, oid, record){ if(gid==null) return; _sessionLogs[String(gid)]={ oid:oid, ms:Date.now(), record:record||null }; }
 function rawTreeDate(a){ let v=a[treeDateField]; if(v==null||v===''){ v=(a.DATE!=null&&a.DATE!=='')?a.DATE:null; } if(v==null||v===''){ for(const k in a){ if(k.toLowerCase()==='date'&&a[k]!=null&&a[k]!==''){v=a[k];break;} } } return v; }
 function capturePreEdit(a){
   _preEdit={ OVERHEAL:a.OVERHEAL, STRUDEFE:a.STRUDEFE, WOUNCANK:a.WOUNCANK, DEADDECAY:a.DEADDECAY,
@@ -1258,28 +1263,37 @@ const CORRECTION_WINDOW_MS = 60*60*1000;   // 60 minutes
 // Decide whether this edit is a same-session correction. If so, UPDATE the existing recent
 // inspection to the corrected values (no new record). If it's a genuine later re-inspection,
 // carry the pre-edit state forward as a dated prior record (history). Returns a Promise<'correction'|'reinspection'>.
+function correctionRecordFrom(last, g){
+  const rec=Object.assign({}, last);
+  rec.condition_at_inspection=g.attributes.OVERHEAL; rec.Structdefe_at_inspection=g.attributes.STRUDEFE;
+  rec.Woundcank_at_inspection=g.attributes.WOUNCANK; rec.Deaddecay_at_inspection=g.attributes.DEADDECAY;
+  rec.Failpote_at_inspection=g.attributes.FAILPOTE; rec.Pestdisease_at_inspection=g.attributes.PESTDISEAS;
+  rec.Impediment_at_inspection=g.attributes.IMPEDMNT; rec.DBH=(g.attributes.DBH!=null?g.attributes.DBH:null);
+  rec.recommendations=g.attributes.RECOTREA; rec.Species=g.attributes.COMMON;
+  return rec;
+}
 function writePriorLog(g){
   if(!_preEdit || !g || !inspLayer) return Promise.resolve({kind:'reinspection'});
   const gid=g.attributes.GlobalID;
-  return inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}' AND activity_type IN ('Inspection','Planted')`, outFields:["*","CreationDate"], returnGeometry:false, orderByFields:["CreationDate DESC"], num:1}).then(res=>{
+
+  // ---- FAST, RELIABLE CORRECTION CHECK: did THIS app write a log for this tree within the window? ----
+  const s=_sessionLogs[String(gid)];
+  if(s && (Date.now()-s.ms) <= CORRECTION_WINDOW_MS && s.oid!=null){
+    const base = s.record || {}; base[inspLayer.objectIdField]=s.oid;
+    return Promise.resolve({kind:'correction', record:correctionRecordFrom(base, g)});
+  }
+
+  // ---- otherwise fall back to querying the service (older logs from a previous session) ----
+  return inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}' AND activity_type IN ('Inspection','Planted')`, outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"], num:1}).then(res=>{
     const now=Date.now();
     const last=res.features.length?res.features[0].attributes:null;
-    // creation time of the most recent inspection (prefer CreationDate; fall back to its date)
     let lastMs=null;
-    if(last){ const c=last.CreationDate; const d=logDate(last);
+    if(last){ const c=last.CreationDate!=null?last.CreationDate:last.created_date; const d=logDate(last);
       lastMs = (c!=null? Number(c) : (d!=null? new Date(d).getTime() : null)); }
 
-    // ---- CORRECTION: the most recent inspection is very fresh -> reopen THAT log pre-filled with the
-    // corrected tree values so the user can review/adjust; saving updates the same record (no duplicate).
+    // (service-side correction detection only works if CreationDate is exposed; session check above is primary)
     if(last && lastMs!=null && (now-lastMs) <= CORRECTION_WINDOW_MS){
-      // refresh the snapshot fields on the record to the corrected tree state, then hand it back
-      const rec=Object.assign({}, last);
-      rec.condition_at_inspection=g.attributes.OVERHEAL; rec.Structdefe_at_inspection=g.attributes.STRUDEFE;
-      rec.Woundcank_at_inspection=g.attributes.WOUNCANK; rec.Deaddecay_at_inspection=g.attributes.DEADDECAY;
-      rec.Failpote_at_inspection=g.attributes.FAILPOTE; rec.Pestdisease_at_inspection=g.attributes.PESTDISEAS;
-      rec.Impediment_at_inspection=g.attributes.IMPEDMNT; rec.DBH=(g.attributes.DBH!=null?g.attributes.DBH:null);
-      rec.recommendations=g.attributes.RECOTREA; rec.Species=g.attributes.COMMON;
-      return {kind:'correction', record:rec};
+      return {kind:'correction', record:correctionRecordFrom(last, g)};
     }
 
     // ---- RE-INSPECTION: meaningful time has passed -> carry the pre-edit state forward as history ----
@@ -1662,6 +1676,8 @@ function submitInspection(){
   inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     bumpDay('log');
+    // remember this log for same-session correction detection
+    noteSessionLog(gid, res.objectId, Object.assign({}, attrs, {[inspLayer.objectIdField]:res.objectId}));
     if(_photoAtSave && _photoAtSave.length){
       // attach every photo to BOTH the inspection record and the tree point (mirrors Field Maps)
       const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
