@@ -1161,6 +1161,7 @@ function openEditTree(){
     <div class="field"><label>Overall health</label><select id="e_OVERHEAL">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
     <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
+    <div class="frow"><div class="field"><label>Wound / canker</label><select id="e_WOUNCANK">${options('WOUNCANK',a.WOUNCANK,true)}</select></div><div class="field"><label>Deadwood / decay</label><select id="e_DEADDECAY">${options('DEADDECAY',a.DEADDECAY,true)}</select></div></div>
     <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(a.PESTDISEAS==null?'':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
@@ -1267,7 +1268,7 @@ function writePriorLog(g){
 function clearComments(){ const t=document.getElementById('e_COMMENTS'); if(t){ t.value=''; markChanged(t); t.focus(); } }
 function saveTree(){
   const g=selectedGraphic; if(!g)return;
-  ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','FAILPOTE','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
+  ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','WOUNCANK','DEADDECAY','FAILPOTE','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
   g.attributes.PESTDISEAS=gvField('e_PESTDISEAS');
   g.attributes.IMPEDMNT=gvField('e_IMPEDMNT');
   g.attributes.DBH=gv('e_DBH')===''?null:parseFloat(gv('e_DBH'));
