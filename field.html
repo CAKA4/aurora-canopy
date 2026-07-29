@@ -36,14 +36,14 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .wm{color:#fff;font-weight:700}
 .iq{color:#5FD08A;font-weight:800}
 .tld{color:var(--muted);font-weight:600;font-size:.72em}
-#brand h1{font-size:15px;font-weight:700;letter-spacing:.02em;margin:0;line-height:1;white-space:nowrap}
+#brand h1{font-size:15px;font-weight:700;letter-spacing:.02em;margin:0;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 #brand h1 span{color:var(--muted);font-weight:500}
 #readout{pointer-events:auto;margin-left:auto;background:rgba(15,21,26,.86);backdrop-filter:blur(8px);
   border:1px solid var(--line);border-radius:12px;padding:6px 10px;font-family:var(--mono);font-size:11px;
   display:flex;gap:12px;color:var(--muted)}
 #readout b{color:var(--text);font-weight:600}
 #readout .warn b{color:var(--amber)}
-@media(max-width:520px){#brand h1 span{display:none}#readout{font-size:10px;gap:9px}}
+@media(max-width:520px){#brand h1 span{display:none}#brand h1{font-size:13px;max-width:150px}#readout{font-size:10px;gap:8px;padding:6px 8px}}
 
 /* ---- basemap + net toggles ---- */
 #tools{position:absolute;z-index:1000;right:12px;top:calc(env(safe-area-inset-top) + 56px);
@@ -222,6 +222,7 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .rmphoto{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .photolabel-multi{font-size:11px;color:var(--muted);margin-top:6px}
 .liblink{text-align:center;font-size:12.5px;color:var(--brand);margin-top:8px;cursor:pointer;text-decoration:underline}
+.photobtn>input[type=file]{display:none}
 .photobtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;
   background:#1E6FD0;border:2px solid #1A62B8;border-radius:14px;color:#fff;padding:16px 12px;cursor:pointer;margin:2px 0 6px}
 .photobtn:active{transform:translateY(1px)}
@@ -304,7 +305,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
 #gate button:active{transform:translateY(1px)}
 #gate .err{color:var(--dead);font-size:13px;max-width:340px}
 #gate.hidden{display:none}
-#userChip{font-family:var(--mono);font-size:10.5px;font-weight:600;color:#20160a;background:var(--field);padding:3px 8px;border-radius:20px;margin-left:2px;white-space:nowrap;max-width:96px;overflow:hidden;text-overflow:ellipsis}
+#userChip{font-family:var(--mono);font-size:10.5px;font-weight:600;color:#20160a;background:var(--field);padding:3px 8px;border-radius:20px;margin-left:2px;white-space:nowrap;flex:none;overflow:hidden;text-overflow:ellipsis}
 #identity{position:absolute;inset:0;z-index:4000;background:radial-gradient(900px 480px at 70% -10%,rgba(44,122,84,.18),transparent),rgba(9,13,17,.97);display:flex;align-items:center;justify-content:center;padding:24px}
 #identity.hidden{display:none}
 #identity .idcard{max-width:360px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -595,7 +596,7 @@ require([
       BASES[0]=yorkBase; startBasemap=yorkBase;
     }
     map=new Map({basemap:startBasemap, layers:mapLayers});
-    view=new MapView({container:"map", map, zoom:16, center:[-79.4242,44.0088], ui:{components:["zoom"]}});
+    view=new MapView({container:"map", map, zoom:16, center:[-79.4242,44.0088], ui:{components:[]}});
 
     view.when(()=>{
       document.getElementById('boot').classList.add('hidden');
@@ -1197,7 +1198,7 @@ function openEditTree(){
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
     <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
     <div class="frow"><div class="field"><label>Wound / canker</label><select id="e_WOUNCANK">${options('WOUNCANK',a.WOUNCANK,true)}</select></div><div class="field"><label>Deadwood / decay</label><select id="e_DEADDECAY">${options('DEADDECAY',a.DEADDECAY,true)}</select></div></div>
-    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc(domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc(a.PESTDISEAS==null?'':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="${esc((a.PESTDISEAS==null||a.PESTDISEAS==='')?'None observed':domLabel('PESTDISEAS',a.PESTDISEAS))}" data-val="${esc((a.PESTDISEAS==null||a.PESTDISEAS==='')?'None observed':a.PESTDISEAS)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
     <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
