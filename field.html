@@ -1158,7 +1158,7 @@ function openEditTree(){
   document.getElementById('shBody').innerHTML=`
     <div class="field"><label>Species — common name</label><input readonly class="pickfield" id="e_COMMON" value="${esc(a.COMMON==='None'?'':a.COMMON||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('e_COMMON')"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="e_DBH" value="${esc(a.DBH??'')}" placeholder="Tap to choose DBH" onclick="openDbhPicker('e_DBH')"></div>
-    <div class="field"><label>Overall health</label><select id="e_OVERHEAL">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
+    <div class="field"><label>Overall health</label><select id="e_OVERHEAL" onchange="onHealthChange('e')">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
     <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
     <div class="frow"><div class="field"><label>Wound / canker</label><select id="e_WOUNCANK">${options('WOUNCANK',a.WOUNCANK,true)}</select></div><div class="field"><label>Deadwood / decay</label><select id="e_DEADDECAY">${options('DEADDECAY',a.DEADDECAY,true)}</select></div></div>
@@ -1265,6 +1265,29 @@ function writePriorLog(g){
     return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); return 'reinspection'; }).catch(()=>'reinspection');
   }).catch(()=>'reinspection');
 }
+// When a tree is Removed / Dead / Stump / Stump carving, its defect ratings are no longer
+// meaningful. Clear them to their blank/none value. Species, Site location and Comments are kept.
+const NON_LIVING_CONDITIONS = ['Removed','Dead','Stump','Stump carving'];
+function onHealthChange(prefix){
+  const h=gv(prefix+'_OVERHEAL');
+  if(NON_LIVING_CONDITIONS.indexOf(h)<0) return;   // living tree: leave everything as-is
+  const setSel=(id,val)=>{ const el=document.getElementById(id); if(el){ el.value=(val==null?'':val); markChanged(el); } };
+  const setPick=(id,code)=>{ const el=document.getElementById(id); if(el){ el.value=domLabelFor(id,code); el.setAttribute('data-val',code); markChanged(el); } };
+  // DBH -> blank
+  const dbh=document.getElementById(prefix+'_DBH'); if(dbh){ dbh.value=''; markChanged(dbh); }
+  // defect selects -> blank ('' shows the "—" option in edit; new-tree selects have no blank, so use first "no problem" value)
+  setSel(prefix+'_STRUDEFE', document.getElementById(prefix+'_STRUDEFE') && hasBlankOption(prefix+'_STRUDEFE')?'':'No problem');
+  setSel(prefix+'_WOUNCANK', hasBlankOption(prefix+'_WOUNCANK')?'':'No problem');
+  setSel(prefix+'_DEADDECAY', hasBlankOption(prefix+'_DEADDECAY')?'':'NO PROBLEM (no visible problem)');
+  setSel(prefix+'_FAILPOTE', hasBlankOption(prefix+'_FAILPOTE')?'':'Low');
+  // pest / impediment -> their "none" value
+  setPick(prefix+'_PESTDISEAS','None observed');
+  setPick(prefix+'_IMPEDMNT','None');
+  // recommended treatment -> No Treatment
+  setSel(prefix+'_RECOTREA','No Treatment');
+  toast('Defect fields cleared for a non-living tree','ok');
+}
+function hasBlankOption(id){ const el=document.getElementById(id); if(!el)return false; return Array.from(el.options).some(o=>o.value===''); }
 function clearComments(){ const t=document.getElementById('e_COMMENTS'); if(t){ t.value=''; markChanged(t); t.focus(); } }
 function saveTree(){
   const g=selectedGraphic; if(!g)return;
@@ -1314,7 +1337,7 @@ function openNewTree(pt){
     ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
     <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
-    <div class="field"><label>Overall health</label><select id="n_OVERHEAL">${options('OVERHEAL','Good',false)}</select></div>
+    <div class="field"><label>Overall health</label><select id="n_OVERHEAL" onchange="onHealthChange('n')">${options('OVERHEAL','Good',false)}</select></div>
     <div class="field"><label>Site location</label><select id="n_SITELOCA">${options('SITELOCA','Boulevard',false)}</select></div>
     <div class="slabel">Condition &amp; defect assessment</div>
     <div class="frow"><div class="field"><label>Structural</label><select id="n_STRUDEFE">${options('STRUDEFE','No problem',false)}</select></div><div class="field"><label>Wound / canker</label><select id="n_WOUNCANK">${options('WOUNCANK','No problem',false)}</select></div></div>
@@ -1366,7 +1389,7 @@ function fillFromLastTree(){
 }
 // resolve a domain code to its display label for a given field id
 function domLabelFor(id,code){
-  const map={n_PESTDISEAS:'PESTDISEAS', n_IMPEDMNT:'IMPEDMNT'};
+  const map={n_PESTDISEAS:'PESTDISEAS', n_IMPEDMNT:'IMPEDMNT', e_PESTDISEAS:'PESTDISEAS', e_IMPEDMNT:'IMPEDMNT'};
   const dk=map[id]; if(!dk) return code;
   return domLabel(dk,code);
 }
