@@ -235,6 +235,19 @@ h1 span{color:var(--muted);font-weight:500}
 #gate h1{font-size:24px}#gate p{color:var(--muted);font-size:14px;max-width:320px;margin:0;line-height:1.5}
 #gate button{margin-top:4px;background:var(--brand);color:#fff;border:none;border-radius:13px;font-family:var(--sans);font-weight:700;font-size:16px;padding:14px 26px;cursor:pointer}
 #gate .err{color:var(--dead);font-size:13px;max-width:340px}
+/* ---- light, high-contrast popup (ArcGIS defaults to dark; force readable light) ---- */
+.esri-popup__main-container{background:#FFFFFF!important;color:#15242F!important}
+.esri-popup__header{background:#F1F4F6!important}
+.esri-popup__header-title{color:#15242F!important;font-weight:700!important;font-size:17px!important}
+.esri-popup__content{background:#FFFFFF!important;color:#15242F!important}
+.esri-popup__footer{background:#F1F4F6!important}
+.esri-popup__button, .esri-popup__icon{color:#15242F!important}
+.esri-popup__header-buttons .esri-popup__button{color:#51616E!important}
+.esri-popup .esri-widget__table th, .esri-popup .esri-widget__table td{color:#15242F!important;border-color:#E2E8ED!important}
+.esri-features__content-feature, .esri-feature__content, .esri-feature__size-container{background:#FFFFFF!important;color:#15242F!important}
+.esri-feature__field-header{color:#51616E!important}
+.esri-popup__pointer-direction{background:#FFFFFF!important}
+.esri-popup__navigation, .esri-popup__navigation-actions{background:#F1F4F6!important}
 .esri-popup__main-container{background:var(--panel)!important}
 /* keep the popup inside the map frame and scroll its content instead of overflowing */
 .esri-popup--is-docked .esri-popup__main-container{max-height:100%!important}
@@ -2130,7 +2143,7 @@ function buildTreeReportHTML(a, lon, lat, photo, logs, createF, editF, nPhotos){
     +'.head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #2C7A54;padding-bottom:8px;margin-bottom:14px}'
     +'.eyebrow{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#6b7a86}'
     +'.cols{display:flex;gap:22px}.col{flex:1}.sec{margin-bottom:14px;break-inside:avoid}'
-    +'table.rt{width:100%;border-collapse:collapse}table.rt td{padding:3px 6px;border-bottom:1px solid #eef1f3;vertical-align:top}table.rt td.k{color:#6b7a86;width:44%}'
+    +'table.rt{width:100%;border-collapse:collapse;background:#fff}table.rt td{padding:5px 8px;border-bottom:1px solid #e2e8ed;vertical-align:top;color:#15242F;font-size:14px}table.rt td.k{color:#51616E;width:44%;font-weight:600}'
     +'.ph{width:100%;border-radius:6px;display:block;max-height:240px;object-fit:cover}.noph{color:#9aa7b0;font-style:italic;padding:22px;text-align:center;border:1px dashed #cdd6dc;border-radius:6px}'
     +'.mapwrap{position:relative}.mp{width:100%;border-radius:6px;display:block}.pin{position:absolute;top:50%;left:50%;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#e8442b;border:2px solid #fff;box-shadow:0 0 0 1px #e8442b}'
     +'table.lt{width:100%;border-collapse:collapse;font-size:10.5px}table.lt th{text-align:left;background:#f2f5f6;padding:4px 6px;border:1px solid #e3e9ec}table.lt td{padding:4px 6px;border:1px solid #eef1f3;vertical-align:top}'
