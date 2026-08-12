@@ -401,7 +401,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <div id="pickList"></div>
   </div>
 </div>
-<div id="arm"><span>Pan map to aim</span><button id="armCenter" onclick="confirmPlacement()">✛ Place here</button></div>
+<div id="arm"><span id="armLbl">Pan map to aim</span><button id="armCenter" onclick="confirmPlacement()">✛ Place here</button><button id="armMove" style="display:none" onclick="confirmMove()">✓ Move here</button></div>
 
 <div id="fabs">
   <button class="fab add" id="fabAdd" onclick="toggleAdd()">
@@ -720,18 +720,22 @@ function options(dkey,current,blank){
   return h;
 }
 /* ---- species master list (from the official taxonomy table) + rapid-entry recents ---- */
-let taxoRows=[], taxoMap={}, recentSpecies=[], recentDbh=[], speciesFreq={}, dbhFreq={};
+let taxoRows=[], taxoMap={}, recentSpecies=[], recentDbh=[], speciesFreq={}, dbhFreq={}, domainFreq={};
 // restore usage frequencies so commonly-entered species/DBH stay at the top of the list across sessions
 (function(){ try{
   const s=localStorage.getItem('aurora_speciesFreq'); if(s) speciesFreq=JSON.parse(s)||{};
   const d=localStorage.getItem('aurora_dbhFreq'); if(d) dbhFreq=JSON.parse(d)||{};
   const rs=localStorage.getItem('aurora_recentSpecies'); if(rs) recentSpecies=JSON.parse(rs)||[];
+  const df=localStorage.getItem('aurora_domainFreq'); if(df) domainFreq=JSON.parse(df)||{};
 }catch(e){} })();
 function _persistFreq(){ try{
   localStorage.setItem('aurora_speciesFreq', JSON.stringify(speciesFreq));
   localStorage.setItem('aurora_dbhFreq', JSON.stringify(dbhFreq));
   localStorage.setItem('aurora_recentSpecies', JSON.stringify(recentSpecies.slice(0,10)));
+  localStorage.setItem('aurora_domainFreq', JSON.stringify(domainFreq));
 }catch(e){} }
+// record that a value was chosen from a domain picker (so frequent picks rise to the top)
+function recordDomainPick(dkey, code){ if(code==null||code==='')return; domainFreq[dkey]=domainFreq[dkey]||{}; const k=String(code); domainFreq[dkey][k]=(domainFreq[dkey][k]||0)+1; _persistFreq(); }
 function loadTaxonomy(){
   if(!taxoLayer) return;
   taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName IS NOT NULL", outFields:["CommonName","Species","Family"], returnGeometry:false, orderByFields:["CommonName"], num:2000}))
@@ -843,7 +847,13 @@ function domLabel(dkey, code){ const d=DOMAINS[dkey]||{}; if(code==null||code===
 // picklist that lets the crew pick an existing value OR add a one-off value typed in the field
 function openDomainPicker(id, dkey, title){
   const d=DOMAINS[dkey]||{};
-  const codes=Object.keys(d).filter(k=>k!=='Code');
+  let codes=Object.keys(d).filter(k=>k!=='Code');
+  // frequently-chosen values float to the top for faster entry; the rest keep their original order
+  const freq=domainFreq[dkey]||{};
+  const used=codes.filter(k=>freq[k]).sort((a,b)=>(freq[b]||0)-(freq[a]||0));
+  const seen={}; used.forEach(k=>seen[k]=1);
+  const rest=codes.filter(k=>!seen[k]);
+  codes=used.concat(rest);
   const labels=codes.map(k=>d[k]);
   const label2code={}; codes.forEach(k=>{ label2code[d[k]]=k; });
   const el=document.getElementById(id);
@@ -852,6 +862,7 @@ function openDomainPicker(id, dkey, title){
   openPicker({title:title, items:labels, value:curLabel, allowFree:true, noAutoFocus:true, onPick:v=>{
     const code=(label2code[v]!=null?label2code[v]:v);   // known label → its code; a typed value is stored as-is
     if(el){ el.value=v; el.setAttribute('data-val', code); markChanged(el); }
+    recordDomainPick(dkey, code);   // remember for next time
   }});
 }
 
@@ -908,6 +919,48 @@ function toggleAdd(){
     toast('Location unavailable — pan the map to the tree','warn');
   }
 }
+// ---- move an existing tree point ----
+let _movingTree=null;
+function startMoveTree(){
+  const g=selectedGraphic; if(!g||!g.geometry){ toast('No tree selected','warn'); return; }
+  _movingTree=g;
+  closeSheetKeepSelection();                 // hide the form but keep the selected tree
+  // centre the map on the tree and show the crosshair with a "Move here" button
+  view.goTo({target:g.geometry, zoom:Math.max(view.zoom||19,19)}).catch(()=>{});
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.add('show');
+  document.getElementById('armLbl').textContent='Pan so the crosshair is on the tree';
+  document.getElementById('armCenter').style.display='none';
+  document.getElementById('armMove').style.display='';
+  document.getElementById('arm').classList.add('show');
+  toast('Pan the map to move the point, then tap Move here','ok');
+}
+function confirmMove(){
+  const g=_movingTree; if(!g){ cancelMove(); return; }
+  const c=view.center.clone?view.center.clone():view.center;
+  g.geometry=c;
+  // recompute address / grid / UTM for the new location, then save the geometry
+  const btn=document.getElementById('armMove'); if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  Promise.resolve(computeGridXY(c).then(o=>Object.assign(g.attributes,{GRID:o.GRID,X:o.X,Y:o.Y})).catch(()=>{}))
+    .then(()=> lookupAddress(c).then(addr=>{ if(addr) g.attributes.ADDRESS=addr; }).catch(()=>{}))
+    .then(()=> applyEditsWithRetry(treeLayer, {updateFeatures:[g]}, 2))
+    .then(r=>{ if(r.updateFeatureResults&&r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
+      treeLayer.refresh(); toast('Tree point moved','ok'); endMoveMode(); openTree(g); })
+    .catch(err=>{ if(btn){ btn.disabled=false; btn.textContent='✓ Move here'; }
+      const msg=(err&&(err.message||err.name))||String(err);
+      if(/load failed|network|failed to fetch|timeout/i.test(msg)) toast('No connection — try Move here again','warn');
+      else toast('Move failed: '+msg,'err'); });
+}
+function cancelMove(){ endMoveMode(); if(_movingTree) openTree(_movingTree); }
+function endMoveMode(){
+  _movingTree=null;
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show');
+  document.getElementById('arm').classList.remove('show');
+  const m=document.getElementById('armMove'); if(m){ m.style.display='none'; m.disabled=false; m.textContent='✓ Move here'; }
+  const c=document.getElementById('armCenter'); if(c) c.style.display='';
+  document.getElementById('armLbl').textContent='Pan map to aim';
+}
+// close the sheet without clearing the selected tree (used when entering move mode)
+function closeSheetKeepSelection(){ document.getElementById('scrim').classList.remove('show'); document.getElementById('sheet').classList.remove('up'); }
 // user tapped "Place here": drop the point at the current map centre (the crosshair) and open the form
 function confirmPlacement(){
   if(!view||!view.center) return;
@@ -1207,6 +1260,7 @@ function openEditTree(){
     
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:10px" onclick="startMoveTree()">✛ Move tree point</button>
     <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
   openSheet();
   renderAuto();
@@ -1342,7 +1396,7 @@ function onHealthChange(prefix){
     if(typeof toast==='function') toast('Defect fields and comments cleared for a non-living tree','ok');
   }catch(e){ /* never let this block the form */ }
 }
-function clearComments(){ const t=document.getElementById('e_COMMENTS'); if(t){ t.value=''; markChanged(t); t.focus(); } }
+function clearComments(id){ const t=document.getElementById(id||'e_COMMENTS'); if(t){ t.value=''; if(typeof markChanged==='function') markChanged(t); t.focus(); } }
 function saveTree(){
   const g=selectedGraphic; if(!g)return;
   ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','WOUNCANK','DEADDECAY','FAILPOTE','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
@@ -1403,7 +1457,7 @@ function openNewTree(pt){
     <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="n_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('n_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
-    <div class="field"><label>Comments</label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
+    <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments<button type="button" class="clearbtn" onclick="clearComments('n_COMMENTS')">✕ Clear</button></label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
     
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
@@ -1532,7 +1586,7 @@ function openInspection(g,preset,editRec,isCorrection){
     <div class="frow"><div class="field"><label>Inspector</label><input id="i_inspector" list="inspectors" value="${esc(editRec?(R.inspector_name||''):(currentInspector||''))}" placeholder="Name or initials"><datalist id="inspectors">${Object.keys(DOMAINS.inspector_name||{}).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div><div class="field"><label>Date</label><input type="date" id="i_date" value="${editRec?esc(fmtDateInput(logDate(R))):today()}"></div></div>
     <div class="grp-snapnote treenote hide">🔒 <b>This inspection just records your visit</b> — a note and photo, dated today. The condition &amp; defects below show the tree\u2019s current record for reference (read-only). If anything has changed, go Back → <b>Edit tree</b> to update it.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
     <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
-    <div class="field"><label>Notes</label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
+    <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Notes<button type="button" class="clearbtn" onclick="clearComments('i_notes')">✕ Clear</button></label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
     <div class="photoblock"><label class="photobtn" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="i_photolib" onchange="onPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('i_photolib').click()">or attach from library</div><div id="i_photoprev" class="photogrid"></div></div>
     <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
     <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
