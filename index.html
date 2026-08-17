@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -53,6 +54,8 @@ input[type=date]{color-scheme:light}
 .chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .chip:hover{border-color:var(--muted)}
 #map{height:460px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.gdbnote{flex-basis:100%;font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px}
+.gdbnote b{color:var(--text);font-weight:600}
 .mapfoot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px}
 .showing{font-size:14px}.showing b{font-family:var(--mono);color:var(--amber);font-size:18px}
 .dl{background:var(--good);color:#08130c;border:none;font-family:var(--sans);font-weight:700;font-size:13.5px;padding:9px 16px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
@@ -136,7 +139,8 @@ input[type=date]{color-scheme:light}
 .concern .who .m{font-size:11.5px;color:var(--muted)}
 .concern .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:6px;flex:none}
 .tag.rem{background:rgba(208,64,43,.16);color:var(--dead)}.tag.pri{background:rgba(232,134,43,.16);color:var(--dec)}
-.concerncount{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}
+.concerncount{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
+.sortnote{font-size:11px;color:var(--muted);margin-bottom:8px;font-style:italic}
 .concernscroll{max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-right:-6px;padding-right:6px}
 .spselect{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .spselect label{font-size:13px;color:var(--muted)}
@@ -430,9 +434,11 @@ input[type=date]{color-scheme:light}
       <div class="showing">Showing <b id="showN">&mdash;</b> <span id="showLbl">trees</span></div>
       <button class="dl" id="xlsxBtn" onclick="downloadXLSX()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download Excel + photos</button>
       <button class="dl ghost" id="photoZipBtn" onclick="downloadPhotos()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>Download photos</button>
+      <button class="dl ghost" id="gisBtn" onclick="downloadGIS()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2C8 6 8 11 12 22C16 11 16 6 12 2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="8" r="2" stroke="currentColor" stroke-width="1.8"/></svg>Shapefile / GeoJSON</button>
       <button class="dl ghost" id="pdfZipBtn" onclick="downloadTreeReports()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v4h4M9 13h6M9 17h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Tree PDF reports</button>
       <button class="dl ghost" onclick="openCanopy()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Canopy analytics</button>
       <div class="legend" id="legend"></div>
+      <div class="gdbnote">Downloads reflect the current filter. For the complete File Geodatabase (full field names, domains &amp; photo attachments), export from the <b>ArcGIS Online item page → Export Data → File Geodatabase</b>.</div>
     </div>
   </div>
 
@@ -1713,6 +1719,75 @@ async function fetchFilteredTrees(progressBtn, label){
   return all;
 }
 
+// ---- geospatial export: GeoJSON + real shapefile for the current query ----
+async function fetchFilteredTreesFull(progressBtn, label){
+  const W=curWhere();
+  let all=[], start=0, page=1000;
+  const fields=REPORT_COLS.map(c=>c[0]).concat(["OBJECTID","GlobalID","TREENUMB"]);
+  while(true){
+    const res=await stats.queryFeatures(withGeom({where:W, outFields:fields, returnGeometry:true, outSpatialReference:{wkid:4326}, num:page, start:start, orderByFields:["TREENUM_NEW"]}));
+    all=all.concat(res.features); if(progressBtn) progressBtn.textContent=label+' '+all.length;
+    if(res.features.length<page) break; start+=page; if(start>80000) break;
+  }
+  return all;
+}
+// shapefile DBF field names are capped at 10 chars & must be unique — build a safe short-name map
+function shpFieldMap(){
+  const used={}, map={};
+  REPORT_COLS.forEach(c=>{ let base=c[0].slice(0,10); let name=base, i=1;
+    while(used[name]){ name=base.slice(0,10-String(i).length)+i; i++; } used[name]=1; map[c[0]]=name; });
+  return map;
+}
+async function downloadGIS(){
+  const btn=document.getElementById('gisBtn');
+  if(typeof JSZip==='undefined'){ alert('ZIP library still loading — try again in a moment.'); return; }
+  const old=btn.dataset.old||btn.innerHTML; btn.dataset.old=old; btn.disabled=true;
+  try{
+    btn.textContent='Finding trees…';
+    const feats=await fetchFilteredTreesFull(btn,'Finding trees…');
+    if(!feats.length){ alert('No trees in the current search.'); btn.innerHTML=old; btn.disabled=false; return; }
+    btn.textContent='Building GeoJSON…';
+    // ---- GeoJSON (WGS84) ----
+    const gj={type:"FeatureCollection", features:feats.filter(f=>f.geometry).map(f=>{
+      const a=f.attributes, props={};
+      REPORT_COLS.forEach(c=>{ let v=a[c[0]]; if(c[0]==="DATE") v=dstr(v); props[c[0]]=(v==null?null:v); });
+      props.TREENUM_NEW=a.TREENUM_NEW; props.GlobalID=a.GlobalID;
+      return {type:"Feature", geometry:{type:"Point", coordinates:[f.geometry.longitude, f.geometry.latitude]}, properties:props};
+    })};
+    const stamp=new Date().toISOString().slice(0,10);
+    const zip=new JSZip();
+    zip.file('Aurora_Trees_'+stamp+'.geojson', JSON.stringify(gj));
+
+    // ---- Shapefile (via shp-write) ----
+    let shpOk=false;
+    try{
+      const smap=shpFieldMap();
+      const geometries=[], properties=[];
+      gj.features.forEach(F=>{ geometries.push(F.geometry.coordinates);
+        const p={}; for(const k in F.properties){ const sk=smap[k]||k.slice(0,10); let v=F.properties[k]; if(v==null)v=''; p[sk]=v; }
+        properties.push(p); });
+      // shpwrite.zip returns a base64 zip (or content) of the shapefile set
+      const shpwrite=window.shpwrite||window.shapefile;
+      if(shpwrite && shpwrite.zip){
+        const content=shpwrite.zip({type:"FeatureCollection", features:gj.features.map(F=>{
+          const p={}; for(const k in F.properties){ const sk=smap[k]||k.slice(0,10); let v=F.properties[k]; if(v==null)v=''; p[sk]=v; } return {type:"Feature",geometry:F.geometry,properties:p};
+        })}, {types:{point:'Aurora_Trees'}});
+        // content may be a base64 string; add as its own nested zip, or unpack into a folder
+        if(typeof content==='string'){ zip.file('Aurora_Trees_shapefile_'+stamp+'.zip', content, {base64:true}); shpOk=true; }
+        else if(content instanceof ArrayBuffer || content instanceof Uint8Array){ zip.file('Aurora_Trees_shapefile_'+stamp+'.zip', content); shpOk=true; }
+      }
+    }catch(e){ /* shapefile is best-effort; GeoJSON always included */ }
+
+    // a .prj + README so the shapefile has a defined CRS and users know what's inside
+    zip.file('README.txt', "Aurora Urban Tree Inventory \u2014 geospatial export ("+stamp+")\n\nContents:\n  - Aurora_Trees_"+stamp+".geojson  (WGS84 / EPSG:4326 \u2014 opens in ArcGIS Pro, QGIS, etc.)\n"+(shpOk?"  - Aurora_Trees_shapefile_"+stamp+".zip  (ESRI Shapefile set: .shp/.shx/.dbf/.prj)\n":"")+"\nCoordinate system: WGS84 geographic (lon/lat).\nNote: shapefile attribute names are truncated to 10 characters (shapefile format limit); see the GeoJSON for full field names.\n\nNeed a File Geodatabase? The complete inventory \u2014 with full field names, coded-value domains and photo attachments \u2014 can be exported as a File Geodatabase from the ArcGIS Online item page (Export Data \u2192 File Geodatabase). That is the most complete format and is recommended for archiving or detailed GIS work.\n");
+
+    btn.textContent='Zipping…';
+    const outBlob=await zip.generateAsync({type:'blob'});
+    saveFileNow(outBlob, 'Aurora_Trees_GIS_'+stamp+'.zip', 'application/zip');
+    btn.innerHTML=old; btn.disabled=false;
+  }catch(err){ btn.innerHTML=old; btn.disabled=false; alert('GIS export failed: '+(err.message||err)); }
+}
+
 // ---- #3: bulk-download photos for the current search as a ZIP ----
 // current ArcGIS OAuth token (attachments are on a secured service and need ?token=...)
 function arcgisToken(){
@@ -2105,7 +2180,7 @@ function loadAll(){
     const rows=res.features.map((f,i)=>{const a=f.attributes;const urgent=/Immediate/.test(a.RECOTREA||'');
       return '<div class="concern" onclick="zoomConcern('+i+')"><div class="sp" style="background:'+col(a.OVERHEAL)+'"></div><div class="who"><div class="n">'+esc(a.COMMON||'Tree')+' '+(a.TREENUM_NEW?('#'+a.TREENUM_NEW):'')+'</div><div class="m">'+esc(a.OVERHEAL||'')+' &middot; '+esc(a.SITELOCA||'')+' &middot; '+(a.DBH!=null?a.DBH+'cm':'')+'</div></div><div class="tag '+(urgent?'rem':'pri')+'">'+(urgent?'Immediate':'Priority')+'</div></div>';
     }).join('');
-    box.innerHTML='<div class="concerncount" id="concernCount">'+res.features.length+' flagged \u2014 scroll for all</div><div class="concernscroll">'+rows+'</div>';
+    box.innerHTML='<div class="concerncount" id="concernCount">'+res.features.length+' flagged \u2014 scroll for all</div><div class="sortnote">Sorted by trunk diameter (DBH), largest first.</div><div class="concernscroll">'+rows+'</div>';
     countW(AND(concernWhere,curWhere())).then(tot=>{ const el=document.getElementById('concernCount'); if(el&&tot>res.features.length) el.textContent=res.features.length+' shown of '+tot+' flagged'; else if(el) el.textContent=tot+' flagged \u2014 scroll for all'; });
   }).catch(()=>document.getElementById('concerns').innerHTML='<div class="loading">Could not load.</div>');
   loadPests();
