@@ -41,7 +41,11 @@ h1 span{color:var(--muted);font-weight:500}
 .dbp{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:12.5px;padding:6px 11px;border-radius:8px;cursor:pointer}
 .dbp.on{background:var(--brand);border-color:var(--brand);color:#fff}
 .dbcustom{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:6px;margin-left:6px}
-.dbcustom input{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px 7px;font-family:var(--mono);font-size:12px;color-scheme:dark}
+.dbcustom input{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:7px;padding:5px 7px;font-family:var(--mono);font-size:12px;color-scheme:light;cursor:pointer}
+/* make the calendar picker icon clearly visible and clickable on desktop */
+.dbcustom input[type=date]::-webkit-calendar-picker-indicator{opacity:1;cursor:pointer;filter:none;padding:2px;margin-left:2px}
+input[type=date]::-webkit-calendar-picker-indicator{opacity:1;cursor:pointer}
+input[type=date]{color-scheme:light}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
 .chip{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:600;font-size:13px;padding:8px 13px;border-radius:20px;cursor:pointer;display:flex;align-items:center;gap:7px;transition:.15s}
 .chip .dot{width:9px;height:9px;border-radius:50%}
@@ -390,7 +394,7 @@ h1 span{color:var(--muted);font-weight:500}
       <button class="dbp" id="dp_2" onclick="presetDate('2')">Last 2 yr</button>
       <button class="dbp" id="dp_5" onclick="presetDate('5')">Last 5 yr</button>
       <button class="dbp" id="dp_stale" onclick="presetDate('stale')">Not seen 5+ yr</button>
-      <span class="dbcustom">from <input type="date" id="dFrom" onchange="applyDates()"> to <input type="date" id="dTo" onchange="applyDates()"></span>
+      <span class="dbcustom">from <input type="date" id="dFrom" onchange="applyDates()" onclick="try{this.showPicker&&this.showPicker()}catch(e){}"> to <input type="date" id="dTo" onchange="applyDates()" onclick="try{this.showPicker&&this.showPicker()}catch(e){}"></span>
     </div>
     <div class="spselect"><label for="spInput">Species scope:</label>
       <div class="combo">
