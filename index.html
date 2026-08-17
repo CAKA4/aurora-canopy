@@ -394,7 +394,7 @@ input[type=date]{color-scheme:light}
       <button class="dbp" id="dp_2" onclick="presetDate('2')">Last 2 yr</button>
       <button class="dbp" id="dp_5" onclick="presetDate('5')">Last 5 yr</button>
       <button class="dbp" id="dp_stale" onclick="presetDate('stale')">Not seen 5+ yr</button>
-      <span class="dbcustom">from <input type="date" id="dFrom" onchange="applyDates()" onclick="try{this.showPicker&&this.showPicker()}catch(e){}"> to <input type="date" id="dTo" onchange="applyDates()" onclick="try{this.showPicker&&this.showPicker()}catch(e){}"></span>
+      <span class="dbcustom">from <input type="date" id="dFrom" onchange="applyDates()"> to <input type="date" id="dTo" onchange="applyDates()"></span>
     </div>
     <div class="spselect"><label for="spInput">Species scope:</label>
       <div class="combo">
@@ -1671,6 +1671,19 @@ function presetDate(kind){
   markPreset(kind);
   refreshForDate();
 }
+// make the desktop date fields open the native calendar on click/focus (mobile already does this)
+function wireDatePickers(){
+  ['dFrom','dTo','apFrom','apTo'].forEach(function(id){
+    var el=document.getElementById(id); if(!el||el._pickerWired) return; el._pickerWired=true;
+    var open=function(ev){ if(typeof el.showPicker==='function'){ try{ el.showPicker(); }catch(e){} } };
+    // pointerup fires within the user gesture and after focus, which browsers accept for showPicker
+    el.addEventListener('pointerup', open);
+    el.addEventListener('keydown', function(e){ if(e.key==='Enter'||e.key===' '){ open(e); } });
+  });
+}
+document.addEventListener('DOMContentLoaded', wireDatePickers);
+// also call it now in case the DOM is already ready when this script runs
+if(document.readyState!=='loading') wireDatePickers();
 function applyDates(){
   const from=document.getElementById('dFrom').value, to=document.getElementById('dTo').value;
   dateWhere=buildDateWhere(from,to);
@@ -2046,6 +2059,7 @@ function loadActivityPeriod(kind){
     +'<button class="chip'+(kind==='custom'?' on':'')+'" onclick="applyActivityRange()">Apply</button>'
     +(kind==='custom'?'<button class="chip" onclick="clearActivityRange()">Clear</button>':'')+'</div>';
   box.innerHTML=picks+'<div class="loading">Loading&hellip;</div>';
+  wireDatePickers();   // wire the apFrom/apTo pickers now that they exist
   Promise.all([
     countW("CreationDate >= "+A+" AND CreationDate < "+Z),
     countW("EditDate >= "+A+" AND EditDate < "+Z+" AND CreationDate < "+A),
