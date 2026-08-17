@@ -7,8 +7,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css">
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{
   --ink:#F1F4F6;--panel:#FFFFFF;--panel2:#EAEEF1;--line:#D2DAE0;
@@ -422,6 +424,8 @@ h1 span{color:var(--muted);font-weight:500}
     <div class="mapfoot">
       <div class="showing">Showing <b id="showN">&mdash;</b> <span id="showLbl">trees</span></div>
       <button class="dl" id="xlsxBtn" onclick="downloadXLSX()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download Excel report</button>
+      <button class="dl ghost" id="photoZipBtn" onclick="downloadPhotos()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>Download photos</button>
+      <button class="dl ghost" id="pdfZipBtn" onclick="downloadTreeReports()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v4h4M9 13h6M9 17h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Tree PDF reports</button>
       <button class="dl ghost" onclick="openCanopy()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Canopy analytics</button>
       <div class="legend" id="legend"></div>
     </div>
@@ -1679,6 +1683,101 @@ function anchorSave(blob, filename){
   document.body.appendChild(a); a.click();
   setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} URL.revokeObjectURL(url); }, 5000);
 }
+// fetch the trees in the current filter (with OBJECTID, number, common name, geometry)
+async function fetchFilteredTrees(progressBtn, label){
+  const W=curWhere();
+  let all=[], start=0, page=1000;
+  while(true){
+    const res=await stats.queryFeatures(withGeom({where:W, outFields:["OBJECTID","GlobalID","TREENUM_NEW","TREENUMB","COMMON","OVERHEAL","DBH","ADDRESS","INSPECTR"], returnGeometry:true, outSpatialReference:{wkid:4326}, num:page, start:start, orderByFields:["TREENUM_NEW"]}));
+    all=all.concat(res.features); if(progressBtn) progressBtn.textContent=label+' '+all.length;
+    if(res.features.length<page) break; start+=page; if(start>80000) break;
+  }
+  return all;
+}
+
+// ---- #3: bulk-download photos for the current search as a ZIP ----
+async function downloadPhotos(){
+  const btn=document.getElementById('photoZipBtn');
+  if(typeof JSZip==='undefined'){ alert('ZIP library still loading — try again in a moment.'); return; }
+  const old=btn.dataset.old||btn.innerHTML; btn.dataset.old=old; btn.disabled=true;
+  try{
+    btn.textContent='Finding trees…';
+    const trees=await fetchFilteredTrees(btn,'Finding trees…');
+    if(trees.length>1500 && !confirm('This search has '+trees.length+' trees. Downloading all their photos may take a while and be a large file. Continue?')){ btn.innerHTML=old; btn.disabled=false; return; }
+    const zip=new JSZip();
+    let done=0, withPhotos=0;
+    for(const f of trees){
+      const oid=f.attributes.OBJECTID; const num=f.attributes.TREENUM_NEW||f.attributes.TREENUMB||oid;
+      try{
+        const attUrl=CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+oid+"/attachments?f=json";
+        const meta=await fetch(attUrl,{credentials:'include'}).then(r=>r.json());
+        const infos=(meta&&meta.attachmentInfos)||[];
+        let idx=0;
+        for(const ai of infos){
+          idx++;
+          const url=CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+oid+"/attachments/"+ai.id;
+          const blob=await fetch(url,{credentials:'include'}).then(r=>r.blob());
+          const ext=(ai.contentType&&ai.contentType.indexOf('png')>=0)?'png':'jpg';
+          zip.file('Tree_'+num+'_'+idx+'.'+ext, blob);
+        }
+        if(infos.length) withPhotos++;
+      }catch(e){ /* skip a tree whose photos fail */ }
+      done++; btn.textContent='Fetching photos… '+done+'/'+trees.length;
+    }
+    if(withPhotos===0){ alert('No photos found for the trees in this search.'); btn.innerHTML=old; btn.disabled=false; return; }
+    btn.textContent='Zipping…';
+    const content=await zip.generateAsync({type:'blob'});
+    const fn='Aurora_Tree_Photos_'+new Date().toISOString().slice(0,10)+'.zip';
+    saveFileNow(content, fn, 'application/zip');
+    btn.innerHTML=old; btn.disabled=false;
+  }catch(err){ btn.innerHTML=old; btn.disabled=false; alert('Photo download failed: '+(err.message||err)); }
+}
+
+// ---- #4: per-tree PDF reports (photo + details) bundled as a ZIP ----
+async function downloadTreeReports(){
+  const btn=document.getElementById('pdfZipBtn');
+  if(typeof JSZip==='undefined'||!window.jspdf){ alert('PDF library still loading — try again in a moment.'); return; }
+  const {jsPDF}=window.jspdf;
+  const old=btn.dataset.old||btn.innerHTML; btn.dataset.old=old; btn.disabled=true;
+  try{
+    btn.textContent='Finding trees…';
+    const trees=await fetchFilteredTrees(btn,'Finding trees…');
+    if(trees.length>500 && !confirm('This search has '+trees.length+' trees. Generating a PDF for each may take a while. Continue?')){ btn.innerHTML=old; btn.disabled=false; return; }
+    const zip=new JSZip();
+    let done=0;
+    for(const f of trees){
+      const a=f.attributes, g=f.geometry; const oid=a.OBJECTID; const num=a.TREENUM_NEW||a.TREENUMB||oid;
+      const doc=new jsPDF({unit:'pt',format:'letter'});
+      let y=54;
+      doc.setFontSize(16); doc.setTextColor(21,36,47); doc.text('Tree Report \u2014 '+(a.COMMON||'Tree'),54,y); y+=8;
+      doc.setDrawColor(210,218,224); doc.line(54,y+6,558,y+6); y+=30;
+      doc.setFontSize(10.5); doc.setTextColor(40,52,62);
+      const rows=[['Tree #',num],['Common name',a.COMMON||''],['Health',a.OVERHEAL||''],['DBH (cm)',a.DBH==null?'':a.DBH],['Inspector',a.INSPECTR||''],['Address',a.ADDRESS||''],['Latitude',g?g.latitude.toFixed(6):''],['Longitude',g?g.longitude.toFixed(6):'']];
+      rows.forEach(r=>{ doc.setTextColor(81,97,110); doc.text(String(r[0]),54,y); doc.setTextColor(21,36,47); doc.text(String(r[1]),190,y); y+=18; });
+      // first photo, if any
+      try{
+        const meta=await fetch(CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+oid+"/attachments?f=json",{credentials:'include'}).then(r=>r.json());
+        const infos=(meta&&meta.attachmentInfos)||[];
+        if(infos.length){
+          const url=CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+oid+"/attachments/"+infos[0].id;
+          const blob=await fetch(url,{credentials:'include'}).then(r=>r.blob());
+          const dataUrl=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(blob); });
+          const fmt=(infos[0].contentType&&infos[0].contentType.indexOf('png')>=0)?'PNG':'JPEG';
+          y+=10; doc.addImage(dataUrl,fmt,54,y,320,240,undefined,'FAST');
+        }
+      }catch(e){ /* no photo */ }
+      const pdfBlob=doc.output('blob');
+      zip.file('Tree_'+num+'.pdf', pdfBlob);
+      done++; btn.textContent='Building reports… '+done+'/'+trees.length;
+    }
+    btn.textContent='Zipping…';
+    const content=await zip.generateAsync({type:'blob'});
+    const fn='Aurora_Tree_Reports_'+new Date().toISOString().slice(0,10)+'.zip';
+    saveFileNow(content, fn, 'application/zip');
+    btn.innerHTML=old; btn.disabled=false;
+  }catch(err){ btn.innerHTML=old; btn.disabled=false; alert('Report generation failed: '+(err.message||err)); }
+}
+
 function saveFileNow(blob, filename, mime){
   try{
     if(typeof File!=='undefined' && navigator.canShare){
@@ -1739,11 +1838,47 @@ async function downloadXLSX(){
     const total=all.length||1;
     const have=all.length?all[0].attributes:{};
     const cols=REPORT_COLS.filter(c=>c[0] in have);
-    const head=cols.map(c=>c[1]).concat(["Latitude","Longitude"]);
+
+    // ---- Gather inspection history FIRST, grouped by tree, so we can link each tree to its records ----
+    btn.textContent='Adding inspection history…';
+    let inspSheet=null;
+    const firstInspRow={};   // tree GlobalID -> 1-based row number on the Inspection History sheet
+    try{
+      const gids=all.map(f=>f.attributes.GlobalID).filter(Boolean);
+      const byTree={};   // gid -> array of records
+      for(let i=0;i<gids.length;i+=200){
+        const batch=gids.slice(i,i+200).map(x=>"'"+String(x).replace(/'/g,"''")+"'").join(',');
+        if(!batch) continue;
+        const r=await insp.queryFeatures({where:CONFIG.fkField+" IN ("+batch+")", outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"]});
+        r.features.forEach(f=>{ const A=f.attributes; const gid=A[CONFIG.fkField]; if(gid==null)return; (byTree[gid]=byTree[gid]||[]).push(A); });
+      }
+      const treeInfo={}; all.forEach(f=>{ const a=f.attributes; treeInfo[a.GlobalID]={num:a.TREENUM_NEW||a.TREENUMB||'', common:a.COMMON||''}; });
+      const ih=[["Tree #","Common name","Activity","Inspection date","Inspector","Condition","Structural","Wound/canker","Dead/decay","Failure","Pest/disease","Impediment","DBH","Recommendation","Notes"]];
+      // walk trees in the SAME order as the inventory sheet so records are grouped and locatable
+      all.forEach(f=>{ const gid=f.attributes.GlobalID; const list=byTree[gid]; if(!list||!list.length) return;
+        firstInspRow[gid]=ih.length+1;   // 1-based row of this tree's first record (header is row 1)
+        const ti=treeInfo[gid]||{};
+        list.forEach(A=>{ ih.push([ ti.num, ti.common, A.activity_type||'', dstr(A.inspection_date), A.inspector_name||'',
+          A.condition_at_inspection||'', A.Structdefe_at_inspection||'', A.Woundcank_at_inspection||'',
+          A.Deaddecay_at_inspection||'', A.Failpote_at_inspection||'', A.Pestdisease_at_inspection||'',
+          A.Impediment_at_inspection||'', (A.DBH==null?'':A.DBH), A.recommendations||'', A.maintenance_notes||'' ]); });
+      });
+      if(ih.length>1) inspSheet=ih;
+    }catch(e){ /* inspection history is best-effort; don't fail the whole export */ }
+
+    // ---- Build the inventory sheet, with a clickable link to each tree's first inspection record ----
+    const head=cols.map(c=>c[1]).concat(["Latitude","Longitude","Photos (ArcGIS)","Inspections"]);
     const inv=[head];
+    const invLinks=[];   // {r, c, gid} cells to turn into internal hyperlinks after the sheet is made
     all.forEach(f=>{ const a=f.attributes,g=f.geometry;
       const row=cols.map(c=>c[0]==="DATE"?dstr(a[c[0]]):(a[c[0]]==null?'':a[c[0]]));
-      row.push(g?g.latitude:'',g?g.longitude:''); inv.push(row); });
+      const oid=a[stats.objectIdField!=null?stats.objectIdField:"OBJECTID"];
+      const photoUrl=(oid!=null)?(CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+oid+"/attachments"):"";
+      const gid=a.GlobalID; const hasInsp=inspSheet && firstInspRow[gid];
+      row.push(g?g.latitude:'',g?g.longitude:'', photoUrl, hasInsp?"View inspections":"none");
+      const rIdx=inv.length;   // 0-based row index in aoa (this row about to be pushed)
+      if(hasInsp) invLinks.push({r:rIdx, c:head.length-1, row:firstInspRow[gid]});
+      inv.push(row); });
     const summary=(title,rows)=>{ rows=rows.filter(r=>r.k!=null&&String(r.k).trim()!=='').sort((a,b)=>b.n-a.n);
       const aoa=[[title],['Category','# of Trees','% of Total']];
       rows.forEach(r=>aoa.push([r.k,r.n,Math.round(r.n/total*1000)/10]));
@@ -1759,13 +1894,19 @@ async function downloadXLSX(){
     const cover=[
       ["Town of Aurora — Urban Tree Inventory"],["Live export from ArcGIS hosted service"],[""],
       ["Generated",new Date().toLocaleString()],["Date range (last assessed)",rangeTxt],["Filter",currentFilter.id==='all'?'All trees':currentFilter.label],["Trees in this export",total],[""],
-      ["Sheets","Tree Inventory (full records) plus summaries by health, genus, species, treatment, pest/disease and age class"+(("PARKNAM" in have)?", park":"")+(("STREET" in have)?", street":"")+"."],
+      ["Sheets","Tree Inventory (full records, with a Photos link column) plus Inspection History (all dated records) and summaries by health, genus, species, treatment, pest/disease and age class"+(("PARKNAM" in have)?", park":"")+(("STREET" in have)?", street":"")+"."],
       ["Note","Live snapshot. Percentages are of the trees in this export. For official ecosystem-benefit figures, run i-Tree Eco."]
     ];
     const wb=XLSX.utils.book_new();
     const add=(name,aoa)=>XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),name.slice(0,31));
     add("About",cover);
-    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inv),"Tree Inventory");
+    const invWS=XLSX.utils.aoa_to_sheet(inv);
+    // turn the "Inspections" cells into internal links jumping to that tree's first record
+    invLinks.forEach(L=>{ const addr=XLSX.utils.encode_cell({r:L.r, c:L.c});
+      const cell=invWS[addr]; if(cell){ cell.l={Target:"#'Inspection History'!A"+L.row, Tooltip:"Go to this tree's inspection records"}; }
+    });
+    XLSX.utils.book_append_sheet(wb,invWS,"Tree Inventory");
+    if(inspSheet) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inspSheet),"Inspection History");
     add("Summary of Health",summary("Trees by health rating",health));
     add("Summary by Genera",summary("Trees by genus",genera));
     add("Summary by Species",summary("Trees by species",species));
