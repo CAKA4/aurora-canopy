@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.3.2/shpwrite.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -1723,19 +1723,18 @@ async function fetchFilteredTrees(progressBtn, label){
 async function fetchFilteredTreesFull(progressBtn, label){
   const W=curWhere();
   let all=[], start=0, page=1000;
-  const fields=REPORT_COLS.map(c=>c[0]).concat(["OBJECTID","GlobalID","TREENUMB"]);
   while(true){
-    const res=await stats.queryFeatures(withGeom({where:W, outFields:fields, returnGeometry:true, outSpatialReference:{wkid:4326}, num:page, start:start, orderByFields:["TREENUM_NEW"]}));
+    const res=await stats.queryFeatures(withGeom({where:W, outFields:["*"], returnGeometry:true, outSpatialReference:{wkid:4326}, num:page, start:start, orderByFields:["TREENUM_NEW"]}));
     all=all.concat(res.features); if(progressBtn) progressBtn.textContent=label+' '+all.length;
     if(res.features.length<page) break; start+=page; if(start>80000) break;
   }
   return all;
 }
 // shapefile DBF field names are capped at 10 chars & must be unique — build a safe short-name map
-function shpFieldMap(){
+function shpFieldMap(keys){
   const used={}, map={};
-  REPORT_COLS.forEach(c=>{ let base=c[0].slice(0,10); let name=base, i=1;
-    while(used[name]){ name=base.slice(0,10-String(i).length)+i; i++; } used[name]=1; map[c[0]]=name; });
+  (keys||REPORT_COLS.map(c=>c[0])).forEach(k=>{ let base=String(k).slice(0,10); let name=base, i=1;
+    while(used[name]){ name=base.slice(0,10-String(i).length)+i; i++; } used[name]=1; map[k]=name; });
   return map;
 }
 async function downloadGIS(){
@@ -1748,10 +1747,13 @@ async function downloadGIS(){
     if(!feats.length){ alert('No trees in the current search.'); btn.innerHTML=old; btn.disabled=false; return; }
     btn.textContent='Building GeoJSON…';
     // ---- GeoJSON (WGS84) ----
+    const have=feats.length?feats[0].attributes:{};
+    const useCols=REPORT_COLS.filter(c=>c[0] in have);
     const gj={type:"FeatureCollection", features:feats.filter(f=>f.geometry).map(f=>{
       const a=f.attributes, props={};
-      REPORT_COLS.forEach(c=>{ let v=a[c[0]]; if(c[0]==="DATE") v=dstr(v); props[c[0]]=(v==null?null:v); });
-      props.TREENUM_NEW=a.TREENUM_NEW; props.GlobalID=a.GlobalID;
+      useCols.forEach(c=>{ let v=a[c[0]]; if(c[0]==="DATE") v=dstr(v); props[c[0]]=(v==null?null:v); });
+      if('TREENUM_NEW' in have) props.TREENUM_NEW=a.TREENUM_NEW;
+      if('GlobalID' in have) props.GlobalID=a.GlobalID;
       return {type:"Feature", geometry:{type:"Point", coordinates:[f.geometry.longitude, f.geometry.latitude]}, properties:props};
     })};
     const stamp=new Date().toISOString().slice(0,10);
@@ -1761,13 +1763,13 @@ async function downloadGIS(){
     // ---- Shapefile (via shp-write) ----
     let shpOk=false;
     try{
-      const smap=shpFieldMap();
+      const smap=shpFieldMap(gj.features.length?Object.keys(gj.features[0].properties):[]);
       const geometries=[], properties=[];
       gj.features.forEach(F=>{ geometries.push(F.geometry.coordinates);
         const p={}; for(const k in F.properties){ const sk=smap[k]||k.slice(0,10); let v=F.properties[k]; if(v==null)v=''; p[sk]=v; }
         properties.push(p); });
       // shpwrite.zip returns a base64 zip (or content) of the shapefile set
-      const shpwrite=window.shpwrite||window.shapefile;
+      const shpwrite=window.shpwrite||window.shpWrite||window.shapefile||(window.shp&&window.shp.write?window.shp:null);
       if(shpwrite && shpwrite.zip){
         const content=shpwrite.zip({type:"FeatureCollection", features:gj.features.map(F=>{
           const p={}; for(const k in F.properties){ const sk=smap[k]||k.slice(0,10); let v=F.properties[k]; if(v==null)v=''; p[sk]=v; } return {type:"Feature",geometry:F.geometry,properties:p};
@@ -1785,7 +1787,7 @@ async function downloadGIS(){
     const outBlob=await zip.generateAsync({type:'blob'});
     saveFileNow(outBlob, 'Aurora_Trees_GIS_'+stamp+'.zip', 'application/zip');
     btn.innerHTML=old; btn.disabled=false;
-  }catch(err){ btn.innerHTML=old; btn.disabled=false; alert('GIS export failed: '+(err.message||err)); }
+  }catch(err){ btn.innerHTML=old; btn.disabled=false; console.error('GIS export error:',err); alert('GIS export failed: '+(err&&(err.message||err.name)||err)+'\n\n(If this persists, the GeoJSON alone can be exported — tell the developer.)'); }
 }
 
 // ---- #3: bulk-download photos for the current search as a ZIP ----
