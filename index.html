@@ -1769,26 +1769,54 @@ async function downloadTreeReports(){
     btn.textContent='Finding trees…';
     const trees=await fetchFilteredTrees(btn,'Finding trees…');
     if(trees.length>500 && !confirm('This search has '+trees.length+' trees. Generating a PDF for each may take a while. Continue?')){ btn.innerHTML=old; btn.disabled=false; return; }
+    if(typeof html2canvas==='undefined'){ alert('Rendering library still loading — try again in a moment.'); btn.innerHTML=old; btn.disabled=false; return; }
     const zip=new JSZip();
     let done=0;
-    // offscreen iframe used to render each tree's full report HTML before converting to PDF
+    // Render each report's real HTML in an offscreen frame at print width, capture it with
+    // html2canvas (faithful to the on-screen report's CSS), then place into a Letter PDF.
+    const PAGE_W=816, PAGE_H=1056;   // US Letter at 96dpi (8.5x11in)
     const stage=document.createElement('iframe');
-    stage.style.cssText='position:fixed;left:-9999px;top:0;width:800px;height:1100px;border:0;background:#fff';
+    stage.style.cssText='position:fixed;left:-9999px;top:0;width:'+PAGE_W+'px;height:'+PAGE_H+'px;border:0;background:#fff';
     document.body.appendChild(stage);
     for(const f of trees){
       const a=f.attributes; const oid=a.OBJECTID; const num=a.TREENUM_NEW||a.TREENUMB||oid;
       try{
         const html=await buildTreeReportHTMLForOid(oid);
-        // render the report HTML into the offscreen frame
         const sd=stage.contentDocument||stage.contentWindow.document;
         sd.open(); sd.write(html); sd.close();
-        await new Promise(res=>setTimeout(res, 250));   // let images/layout settle
-        const doc=new jsPDF({unit:'pt', format:'letter'});
-        await doc.html(sd.body, {
-          x:0, y:0, width:612, windowWidth:800,
-          html2canvas:{scale:612/800, useCORS:true, backgroundColor:'#ffffff', logging:false}
+        // wait for the report's images (photo + location map) to finish loading so they appear in the capture
+        await new Promise(res=>{
+          const imgs=Array.prototype.slice.call(sd.images||[]);
+          if(!imgs.length){ setTimeout(res,150); return; }
+          let left=imgs.length; let settled=false; const done=()=>{ if(!settled&&--left<=0){ settled=true; res(); } };
+          imgs.forEach(im=>{ if(im.complete){ setTimeout(done,0); } else { im.addEventListener('load',done); im.addEventListener('error',done); } });
+          setTimeout(()=>{ if(!settled){ settled=true; res(); } }, 4000);   // safety cap
         });
+        await new Promise(res=>setTimeout(res, 120));   // brief layout settle
+        const bodyEl=sd.body; const fullH=Math.max(bodyEl.scrollHeight, PAGE_H);
+        stage.style.height=fullH+'px';
+        const canvas=await html2canvas(bodyEl, {width:PAGE_W, height:fullH, windowWidth:PAGE_W, windowHeight:fullH, scale:2, useCORS:true, backgroundColor:'#ffffff', logging:false});
+        const doc=new jsPDF({unit:'pt', format:'letter'});
+        const pw=doc.internal.pageSize.getWidth();   // 612pt
+        const ph=doc.internal.pageSize.getHeight();   // 792pt
+        const imgW=pw; const imgH=canvas.height*(pw/canvas.width);
+        const imgData=canvas.toDataURL('image/jpeg',0.92);
+        if(imgH<=ph){
+          doc.addImage(imgData,'JPEG',0,0,imgW,imgH,undefined,'FAST');
+        } else {
+          // taller than one page: slice across pages
+          let sy=0; const pageCanvasH=canvas.width*(ph/pw);
+          while(sy<canvas.height){
+            const slice=document.createElement('canvas'); slice.width=canvas.width; slice.height=Math.min(pageCanvasH, canvas.height-sy);
+            slice.getContext('2d').drawImage(canvas,0,sy,canvas.width,slice.height,0,0,canvas.width,slice.height);
+            const sData=slice.toDataURL('image/jpeg',0.92);
+            if(sy>0) doc.addPage();
+            doc.addImage(sData,'JPEG',0,0,pw, slice.height*(pw/canvas.width),undefined,'FAST');
+            sy+=slice.height;
+          }
+        }
         zip.file('Tree_'+num+'.pdf', doc.output('blob'));
+        stage.style.height=PAGE_H+'px';
       }catch(e){ /* skip a tree whose report fails */ }
       done++; btn.textContent='Building reports… '+done+'/'+trees.length;
     }
@@ -1964,11 +1992,20 @@ async function downloadXLSX(){
             zip.file('photos/'+fname, pblob);
             names.push(fname);
           }
-          // write the filename(s) into the Photos cell of the inventory sheet
+          // write the filename(s) into the Photos cell. Single photo -> a clickable relative link;
+          // multiple -> link to the first and name the rest as text (a cell can only link to one file).
           const addr=XLSX.utils.encode_cell({r:P.r, c:P.c});
           if(!invWS[addr]) invWS[addr]={t:'s'};
-          invWS[addr].v = names.length? ('photos/'+names.join('; photos/')) : 'no photo';
-          invWS[addr].t='s';
+          if(names.length===1){
+            invWS[addr].v='photos/'+names[0]; invWS[addr].t='s';
+            invWS[addr].l={Target:'photos/'+names[0], Tooltip:'Open this tree\u2019s photo (in the photos folder)'};
+          } else if(names.length>1){
+            invWS[addr].v=names[0]+' (+'+(names.length-1)+' more: '+names.slice(1).join(', ')+')';
+            invWS[addr].t='s';
+            invWS[addr].l={Target:'photos/'+names[0], Tooltip:'Opens the first photo; the others are in the photos folder'};
+          } else {
+            invWS[addr].v='no photo'; invWS[addr].t='s';
+          }
         }catch(e){ /* skip a tree whose photos fail; leave its cell blank */ }
         pdone++; btn.textContent='Fetching photos… '+pdone+'/'+photoRows.length;
       }
