@@ -428,7 +428,7 @@ input[type=date]{color-scheme:light}
     <div id="map"></div>
     <div class="mapfoot">
       <div class="showing">Showing <b id="showN">&mdash;</b> <span id="showLbl">trees</span></div>
-      <button class="dl" id="xlsxBtn" onclick="downloadXLSX()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download Excel report</button>
+      <button class="dl" id="xlsxBtn" onclick="downloadXLSX()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Download Excel + photos</button>
       <button class="dl ghost" id="photoZipBtn" onclick="downloadPhotos()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.2" stroke="currentColor" stroke-width="1.8"/></svg>Download photos</button>
       <button class="dl ghost" id="pdfZipBtn" onclick="downloadTreeReports()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3v4h4M9 13h6M9 17h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Tree PDF reports</button>
       <button class="dl ghost" onclick="openCanopy()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Canopy analytics</button>
@@ -1890,19 +1890,19 @@ async function downloadXLSX(){
     }catch(e){ /* inspection history is best-effort; don't fail the whole export */ }
 
     // ---- Build the inventory sheet, with a clickable link to each tree's first inspection record ----
-    const head=cols.map(c=>c[1]).concat(["Latitude","Longitude","Photos (ArcGIS)","Inspections"]);
+    const head=cols.map(c=>c[1]).concat(["Latitude","Longitude","Photos (file)","Inspections"]);
     const inv=[head];
     const invLinks=[];   // internal links to inspection records
-    const photoLinks=[];   // external links to each tree's photos (ArcGIS attachments)
+    const photoRows=[];  // {r, c, oid, num} rows that will reference a photos/ filename after fetch
     all.forEach(f=>{ const a=f.attributes,g=f.geometry;
       const row=cols.map(c=>c[0]==="DATE"?dstr(a[c[0]]):(a[c[0]]==null?'':a[c[0]]));
       const oid=a[stats.objectIdField!=null?stats.objectIdField:"OBJECTID"];
-      const photoUrl=(oid!=null)?(CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+oid+"/attachments"):"";
+      const num=a.TREENUM_NEW||a.TREENUMB||oid;
       const gid=a.GlobalID; const hasInsp=inspSheet && firstInspRow[gid];
-      row.push(g?g.latitude:'',g?g.longitude:'', photoUrl?"View photos":"", hasInsp?"View inspections":"none");
-      const rIdx=inv.length;   // 0-based row index in aoa (this row about to be pushed)
+      row.push(g?g.latitude:'',g?g.longitude:'', "", hasInsp?"View inspections":"none");   // photo cell filled after fetch
+      const rIdx=inv.length;
       const photoCol=head.length-2, inspCol=head.length-1;
-      if(photoUrl) photoLinks.push({r:rIdx, c:photoCol, url:photoUrl});
+      if(oid!=null) photoRows.push({r:rIdx, c:photoCol, oid:oid, num:num});
       if(hasInsp) invLinks.push({r:rIdx, c:inspCol, row:firstInspRow[gid]});
       inv.push(row); });
     const summary=(title,rows)=>{ rows=rows.filter(r=>r.k!=null&&String(r.k).trim()!=='').sort((a,b)=>b.n-a.n);
@@ -1920,7 +1920,7 @@ async function downloadXLSX(){
     const cover=[
       ["Town of Aurora — Urban Tree Inventory"],["Live export from ArcGIS hosted service"],[""],
       ["Generated",new Date().toLocaleString()],["Date range (last assessed)",rangeTxt],["Filter",currentFilter.id==='all'?'All trees':currentFilter.label],["Trees in this export",total],[""],
-      ["Sheets","Tree Inventory (full records, with a Photos link column) plus Inspection History (all dated records) and summaries by health, genus, species, treatment, pest/disease and age class"+(("PARKNAM" in have)?", park":"")+(("STREET" in have)?", street":"")+"."],
+      ["Sheets","Tree Inventory (full records; the Photos column names the image file for each tree in the photos folder) plus Inspection History (all dated records) and summaries by health, genus, species, treatment, pest/disease and age class"+(("PARKNAM" in have)?", park":"")+(("STREET" in have)?", street":"")+"."],
       ["Note","Live snapshot. Percentages are of the trees in this export. For official ecosystem-benefit figures, run i-Tree Eco."]
     ];
     const wb=XLSX.utils.book_new();
@@ -1930,9 +1930,6 @@ async function downloadXLSX(){
     // turn the "Inspections" cells into internal links jumping to that tree's first record
     invLinks.forEach(L=>{ const addr=XLSX.utils.encode_cell({r:L.r, c:L.c});
       const cell=invWS[addr]; if(cell){ cell.l={Target:"#'Inspection History'!A"+L.row, Tooltip:"Go to this tree's inspection records"}; }
-    });
-    photoLinks.forEach(L=>{ const addr=XLSX.utils.encode_cell({r:L.r, c:L.c});
-      const cell=invWS[addr]; if(cell){ cell.l={Target:L.url, Tooltip:"Open this tree's photos in ArcGIS (sign-in required)"}; }
     });
     XLSX.utils.book_append_sheet(wb,invWS,"Tree Inventory");
     if(inspSheet) XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(inspSheet),"Inspection History");
@@ -1945,13 +1942,56 @@ async function downloadXLSX(){
     add("Age Structure",summary("Trees by age class (cm)",age));
     if(park.length) add("Park Summary",summary("Trees by park",park));
     if(street.length) add("Street Summary",summary("Trees by street",street));
+    // ---- fetch photos and bundle everything (Excel + photos/ folder) into one ZIP ----
+    // so the Town can view photos with NO sign-in — the images travel with the deliverable.
+    const zip=(typeof JSZip!=='undefined')?new JSZip():null;
+    if(zip){
+      let pdone=0;
+      for(const P of photoRows){
+        try{
+          const attUrl=CONFIG.serviceUrl+"/"+CONFIG.treeLayerId+"/"+P.oid+"/attachments";
+          const resp=await esriRequest(attUrl, {query:{f:"json"}, responseType:"json"});
+          const infos=(resp && resp.data && resp.data.attachmentInfos)||[];
+          const names=[];
+          let idx=0;
+          for(const ai of infos){
+            idx++;
+            const tk=arcgisToken();
+            const url=attUrl+"/"+ai.id+(tk?("?token="+encodeURIComponent(tk)):"");
+            const pblob=await fetch(url).then(r=>r.blob());
+            const ext=(ai.contentType&&ai.contentType.indexOf('png')>=0)?'png':'jpg';
+            const fname='Tree_'+P.num+'_'+idx+'.'+ext;
+            zip.file('photos/'+fname, pblob);
+            names.push(fname);
+          }
+          // write the filename(s) into the Photos cell of the inventory sheet
+          const addr=XLSX.utils.encode_cell({r:P.r, c:P.c});
+          if(!invWS[addr]) invWS[addr]={t:'s'};
+          invWS[addr].v = names.length? ('photos/'+names.join('; photos/')) : 'no photo';
+          invWS[addr].t='s';
+        }catch(e){ /* skip a tree whose photos fail; leave its cell blank */ }
+        pdone++; btn.textContent='Fetching photos… '+pdone+'/'+photoRows.length;
+      }
+    }
     const wbout=XLSX.write(wb,{type:'array',bookType:'xlsx'});
-    const mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    const blob=new Blob([wbout],{type:mime});
-    const filename="Aurora_Tree_Inventory_"+new Date().toISOString().slice(0,10)+".xlsx";
-    btn._pending={blob,filename,mime}; btn.disabled=false; btn.innerHTML='\u2913 Tap to save Excel';
-    saveFileNow(blob, filename, mime);
-    setTimeout(function(){ if(btn._pending&&btn._pending.filename===filename){ btn._pending=null; btn.innerHTML=old; } }, 45000);
+    const xlsxName="Aurora_Tree_Inventory_"+new Date().toISOString().slice(0,10)+".xlsx";
+    if(zip){
+      zip.file(xlsxName, wbout);
+      zip.file('README.txt', "Aurora Urban Tree Inventory export\n\nThis package contains:\n  - "+xlsxName+"  (the inventory workbook)\n  - photos/  (tree photos, named by tree number)\n\nIn the workbook's Tree Inventory sheet, the \"Photos\" column names the image file(s) for each tree.\nOpen the matching file in the photos folder to view them. No sign-in required.\n");
+      btn.textContent='Zipping…';
+      const content=await zip.generateAsync({type:'blob'});
+      const zname="Aurora_Tree_Inventory_"+new Date().toISOString().slice(0,10)+".zip";
+      btn._pending={blob:content,filename:zname,mime:'application/zip'}; btn.disabled=false; btn.innerHTML='\u2913 Tap to save ZIP';
+      saveFileNow(content, zname, 'application/zip');
+      setTimeout(function(){ if(btn._pending&&btn._pending.filename===zname){ btn._pending=null; btn.innerHTML=old; } }, 45000);
+    } else {
+      // JSZip missing: fall back to plain xlsx (no photos folder)
+      const mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      const blob=new Blob([wbout],{type:mime});
+      btn._pending={blob,filename:xlsxName,mime}; btn.disabled=false; btn.innerHTML='\u2913 Tap to save Excel';
+      saveFileNow(blob, xlsxName, mime);
+      setTimeout(function(){ if(btn._pending&&btn._pending.filename===xlsxName){ btn._pending=null; btn.innerHTML=old; } }, 45000);
+    }
   }catch(err){ btn.innerHTML=old; btn.disabled=false; alert("Report failed: "+(err.message||err)); }
 }
 
