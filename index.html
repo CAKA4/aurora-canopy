@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/light/main.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.3.2/shpwrite.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.4.3/shpwrite.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -1768,15 +1768,14 @@ async function downloadGIS(){
       gj.features.forEach(F=>{ geometries.push(F.geometry.coordinates);
         const p={}; for(const k in F.properties){ const sk=smap[k]||k.slice(0,10); let v=F.properties[k]; if(v==null)v=''; p[sk]=v; }
         properties.push(p); });
-      // shpwrite.zip returns a base64 zip (or content) of the shapefile set
-      const shpwrite=window.shpwrite||window.shpWrite||window.shapefile||(window.shp&&window.shp.write?window.shp:null);
+      // shpwrite.zip() returns a PROMISE that resolves to the shapefile zip (await it!)
+      const shpwrite=window.shpwrite||window.shpWrite||window.shapefile;
       if(shpwrite && shpwrite.zip){
-        const content=shpwrite.zip({type:"FeatureCollection", features:gj.features.map(F=>{
+        const shpGj={type:"FeatureCollection", features:gj.features.map(F=>{
           const p={}; for(const k in F.properties){ const sk=smap[k]||k.slice(0,10); let v=F.properties[k]; if(v==null)v=''; p[sk]=v; } return {type:"Feature",geometry:F.geometry,properties:p};
-        })}, {types:{point:'Aurora_Trees'}});
-        // content may be a base64 string; add as its own nested zip, or unpack into a folder
-        if(typeof content==='string'){ zip.file('Aurora_Trees_shapefile_'+stamp+'.zip', content, {base64:true}); shpOk=true; }
-        else if(content instanceof ArrayBuffer || content instanceof Uint8Array){ zip.file('Aurora_Trees_shapefile_'+stamp+'.zip', content); shpOk=true; }
+        })};
+        const shpBlob=await shpwrite.zip(shpGj, {outputType:'blob', types:{point:'Aurora_Trees'}});
+        if(shpBlob){ zip.file('Aurora_Trees_shapefile_'+stamp+'.zip', shpBlob); shpOk=true; }
       }
     }catch(e){ /* shapefile is best-effort; GeoJSON always included */ }
 
