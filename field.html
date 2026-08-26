@@ -587,7 +587,7 @@ require([
     if(CONFIG.parksUrl){ parksLayer=new FeatureLayer({url:CONFIG.parksUrl, outFields:[CONFIG.parkNameField]}); }
     highlightWhere = CONFIG.oldTreeWhere || "1=2";
     highlightLayer = new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, definitionExpression:highlightWhere, minScale:20000, maxScale:0,
-      renderer:{type:"simple", symbol:{type:"simple-marker", color:[255,221,84,0.42], size:18, outline:{color:[255,221,84,0.6], width:1}}}});
+      renderer:{type:"simple", symbol:{type:"simple-marker", color:[255,221,84,0.78], size:18, outline:{color:[230,184,0,0.95], width:1.6}}}});
     mapLayers.push(highlightLayer);
     mapLayers.push(treeLayer);   // main health-coloured trees on top
 
