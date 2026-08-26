@@ -232,7 +232,9 @@ body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hi
 .photobtn .sm{font-size:12px;opacity:.9;font-weight:500}
 .photoblock{margin-bottom:6px}
 .photoblock .liblink{color:#1E6FD0}
+.field .fieldlbl{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.02em}
 .clearbtn{background:none;border:1px solid var(--line);color:var(--muted);font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;cursor:pointer}
+.prevbtn{background:none;border:1px solid var(--brand);color:var(--brand);font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;cursor:pointer;white-space:nowrap;flex:none}
 
 /* buttons */
 .actions{display:flex;gap:10px;margin-top:18px;position:sticky;bottom:0;background:linear-gradient(to top,var(--panel) 78%,transparent);padding:12px 0 4px}
@@ -1256,7 +1258,7 @@ function openEditTree(){
     <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
     <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
     <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
-    <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></label><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></div><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
     
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
@@ -1447,17 +1449,17 @@ function openNewTree(pt){
   document.getElementById('shBody').innerHTML=`
     ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
     <div class="photoblock"><label class="photobtn" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="n_photolib" onchange="onNewPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('n_photolib').click()">or attach from library</div><div id="n_photoprev" class="photogrid"></div></div>
-    <div class="field" style="margin-top:8px"><label>Species — common name <span class="req">*</span></label><input readonly class="pickfield" id="n_COMMON" value="" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
-    <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
-    <div class="field"><label>Overall health</label><select id="n_OVERHEAL" onchange="onHealthChange('n')">${options('OVERHEAL','Good',false)}</select></div>
-    <div class="field"><label>Site location</label><select id="n_SITELOCA">${options('SITELOCA','Boulevard',false)}</select></div>
+    <div class="field" style="margin-top:8px"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Species — common name <span class="req">*</span><button type="button" class="prevbtn" onclick="sameAsPrev('COMMON')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_COMMON" value="" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">DBH (cm)<button type="button" class="prevbtn" onclick="sameAsPrev('DBH')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Overall health<button type="button" class="prevbtn" onclick="sameAsPrev('OVERHEAL')" title="Use previous tree’s value">↩ prev</button></div><select id="n_OVERHEAL" onchange="onHealthChange('n')">${options('OVERHEAL','Good',false)}</select></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Site location<button type="button" class="prevbtn" onclick="sameAsPrev('SITELOCA')" title="Use previous tree’s value">↩ prev</button></div><select id="n_SITELOCA">${options('SITELOCA','Boulevard',false)}</select></div>
     <div class="slabel">Condition &amp; defect assessment</div>
-    <div class="frow"><div class="field"><label>Structural</label><select id="n_STRUDEFE">${options('STRUDEFE','No problem',false)}</select></div><div class="field"><label>Wound / canker</label><select id="n_WOUNCANK">${options('WOUNCANK','No problem',false)}</select></div></div>
-    <div class="frow"><div class="field"><label>Dead / decay</label><select id="n_DEADDECAY">${options('DEADDECAY','NO PROBLEM (no visible problem)',false)}</select></div><div class="field"><label>Failure potential</label><select id="n_FAILPOTE">${options('FAILPOTE','Low',false)}</select></div></div>
-    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="n_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('n_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
-    <div class="field"><label>Impediment</label><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
-    <div class="field"><label>Recommended treatment</label><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
-    <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Comments<button type="button" class="clearbtn" onclick="clearComments('n_COMMENTS')">✕ Clear</button></label><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
+    <div class="frow"><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Structural<button type="button" class="prevbtn" onclick="sameAsPrev('STRUDEFE')" title="Use previous tree’s value">↩ prev</button></div><select id="n_STRUDEFE">${options('STRUDEFE','No problem',false)}</select></div><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Wound / canker<button type="button" class="prevbtn" onclick="sameAsPrev('WOUNCANK')" title="Use previous tree’s value">↩ prev</button></div><select id="n_WOUNCANK">${options('WOUNCANK','No problem',false)}</select></div></div>
+    <div class="frow"><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Dead / decay<button type="button" class="prevbtn" onclick="sameAsPrev('DEADDECAY')" title="Use previous tree’s value">↩ prev</button></div><select id="n_DEADDECAY">${options('DEADDECAY','NO PROBLEM (no visible problem)',false)}</select></div><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Failure potential<button type="button" class="prevbtn" onclick="sameAsPrev('FAILPOTE')" title="Use previous tree’s value">↩ prev</button></div><select id="n_FAILPOTE">${options('FAILPOTE','Low',false)}</select></div></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Pest / disease<button type="button" class="prevbtn" onclick="sameAsPrev('PESTDISEAS')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('n_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Impediment<button type="button" class="prevbtn" onclick="sameAsPrev('IMPEDMNT')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Recommended treatment<button type="button" class="prevbtn" onclick="sameAsPrev('RECOTREA')" title="Use previous tree’s value">↩ prev</button></div><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Comments<button type="button" class="clearbtn" onclick="clearComments('n_COMMENTS')">✕ Clear</button></div><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
     
     <div id="autoPanel"></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
@@ -1477,6 +1479,24 @@ function rememberLastTree(a){
     PESTDISEAS:a.PESTDISEAS, IMPEDMNT:a.IMPEDMNT, RECOTREA:a.RECOTREA
     // deliberately NOT copied: location, address/street/park, comments, photo, dates, tree number
   };
+}
+// fill ONE field on the new-tree form from the previous tree (per-attribute "same as previous")
+function sameAsPrev(field){
+  if(!lastTreeAttrs){ toast('No previous tree yet','warn'); return; }
+  const v=lastTreeAttrs[field];
+  if(v==null||v===''){ toast('Previous tree had no value for that','warn'); return; }
+  const id='n_'+field;
+  const el=document.getElementById(id); if(!el) return;
+  if(field==='PESTDISEAS'||field==='IMPEDMNT'){          // domain pickfields (label shown, code stored)
+    el.value=domLabelFor(id,v); el.setAttribute('data-val',v); markChanged(el);
+  } else if(field==='COMMON'){
+    el.value=v; markChanged(el); autoOnSpecies(id);
+  } else if(field==='DBH'){
+    el.value=v; markChanged(el); Object.assign(derived, dbhDerived(v)); renderAuto();
+  } else {                                                // plain selects
+    el.value=v; markChanged(el);
+  }
+  toast('Set to previous tree\u2019s value','ok');
 }
 // copy species/size/condition/defects from the last tree into the new-tree form
 function fillFromLastTree(){
@@ -1586,7 +1606,7 @@ function openInspection(g,preset,editRec,isCorrection){
     <div class="frow"><div class="field"><label>Inspector</label><input id="i_inspector" list="inspectors" value="${esc(editRec?(R.inspector_name||''):(currentInspector||''))}" placeholder="Name or initials"><datalist id="inspectors">${Object.keys(DOMAINS.inspector_name||{}).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div><div class="field"><label>Date</label><input type="date" id="i_date" value="${editRec?esc(fmtDateInput(logDate(R))):today()}"></div></div>
     <div class="grp-snapnote treenote hide">🔒 <b>This inspection just records your visit</b> — a note and photo, dated today. The condition &amp; defects below show the tree\u2019s current record for reference (read-only). If anything has changed, go Back → <b>Edit tree</b> to update it.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
     <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
-    <div class="field"><label style="display:flex;align-items:center;justify-content:space-between">Notes<button type="button" class="clearbtn" onclick="clearComments('i_notes')">✕ Clear</button></label><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Notes<button type="button" class="clearbtn" onclick="clearComments('i_notes')">✕ Clear</button></div><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
     <div class="photoblock"><label class="photobtn" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="i_photolib" onchange="onPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('i_photolib').click()">or attach from library</div><div id="i_photoprev" class="photogrid"></div></div>
     <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
     <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
