@@ -836,7 +836,31 @@ function pickCommit(){
 // Return key in the search box submits the typed value
 function pickKey(ev){ if(ev.key==='Enter'||ev.keyCode===13){ ev.preventDefault(); pickCommit(); } }
 function pickClose(){ document.getElementById('picker').classList.remove('show'); pickState=null; }
-function openSpeciesPicker(id){ openPicker({title:'Species — common name', items:speciesList(), value:gv(id), allowFree:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnSpecies(id); }}); }
+function openSpeciesPicker(id, isEdit){ const before=gv(id); openPicker({title:'Species — common name', items:speciesList(), value:gv(id), allowFree:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnSpecies(id); if(isEdit && v && v!==before) onEditSpeciesReplaced(); }}); }
+// When the species is changed on the EDIT form, the tree has been replaced -> reset the new tree's
+// condition/defects to defaults, health to Good, clear DBH, treatment to No Treatment. Site location stays.
+function onEditSpeciesReplaced(){
+  try{
+    const setSel=(suffix,val)=>{ const el=document.getElementById('e_'+suffix); if(el){ el.value=val; markChanged(el); } };
+    const setPick=(suffix,code,label)=>{ const el=document.getElementById('e_'+suffix); if(el){ el.value=label; el.setAttribute('data-val',code); markChanged(el); } };
+    // health -> Good (fresh replacement)
+    const oh=document.getElementById('e_OVERHEAL'); if(oh){ oh.value='Good'; markChanged(oh); }
+    // clear DBH so it's re-entered for the new tree
+    const dbh=document.getElementById('e_DBH'); if(dbh){ dbh.value=''; dbh.removeAttribute('data-val'); markChanged(dbh); }
+    // defect fields -> defaults
+    setSel('STRUDEFE','No problem');
+    setSel('WOUNCANK','No problem');
+    setSel('DEADDECAY','NO PROBLEM (no visible problem)');
+    setSel('FAILPOTE','Low');
+    setPick('PESTDISEAS','None observed','None observed');
+    setPick('IMPEDMNT','None','None');
+    // treatment -> No Treatment ; site location intentionally LEFT unchanged
+    const rt=document.getElementById('e_RECOTREA'); if(rt){ rt.value='No Treatment'; markChanged(rt); }
+    // comments described the old tree -> clear
+    const cm=document.getElementById('e_COMMENTS'); if(cm){ cm.value=''; markChanged(cm); }
+    if(typeof toast==='function') toast('New species \u2014 condition reset for the replacement tree','ok');
+  }catch(e){ /* never block the form */ }
+}
 function openDbhPicker(id){ openPicker({title:'DBH (cm)', items:dbhList(), value:gv(id), allowFree:true, numeric:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnDbh(id); }}); }
 (function(){ const l=document.getElementById('pickList'); if(l) l.addEventListener('click',e=>{ const it=e.target.closest('.pickitem'); if(it) pickChoose(it.dataset.val); });
   const p=document.getElementById('picker'); if(p) p.addEventListener('click',e=>{ if(e.target.id==='picker') pickClose(); }); })();
@@ -1164,7 +1188,7 @@ function openTree(g){
     <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="chip"><span class="dot" style="background:${color}"></span>${esc(val(a.OVERHEAL))}</span><span class="chip" id="lastInspChip" style="background:rgba(255,177,0,.14);color:var(--amber)">🗓 Last inspected ${inv}</span></div>
     <div class="attrs">
       ${A('Species (common)',a.COMMON)}${A('DBH (cm)',a.DBH)}${A('Height (m)',a.HEIGHT)}${A('Site',a.SITELOCA)}
-      ${A('Structural',a.STRUDEFE)}${A('Fail potential',a.FAILPOTE)}${A('Pest / disease',a.PESTDISEAS)}${A('Recommended',a.RECOTREA)}
+      ${A('Structural',a.STRUDEFE)}${A('Wound / canker',a.WOUNCANK)}${A('Dead / decay',a.DEADDECAY)}${A('Fail potential',a.FAILPOTE)}${A('Pest / disease',a.PESTDISEAS)}${A('Recommended',a.RECOTREA)}
       ${val(a.ADDRESS)!=='—'?A('Address',a.ADDRESS,true):''}${val(a.COMMENTS)!=='—'?A('Comments',a.COMMENTS,true):''}
     </div>
     <div id="treePhotos"></div>
@@ -1249,7 +1273,7 @@ function openEditTree(){
   setHead('TREE · EDIT CURRENT STATE',val(a.COMMON)!=='—'?a.COMMON:'Tree','Overwrites the persistent tree record',healthColor(a.OVERHEAL));
   document.getElementById('shBody').innerHTML=`
     <div class="photoblock"><label class="photobtn" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="e_photolib" onchange="onEditPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('e_photolib').click()">or attach from library</div><div id="e_photoprev" class="photogrid"></div></div>
-    <div class="field"><label>Species — common name</label><input readonly class="pickfield" id="e_COMMON" value="${esc(a.COMMON==='None'?'':a.COMMON||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('e_COMMON')"></div>
+    <div class="field"><label>Species — common name</label><input readonly class="pickfield" id="e_COMMON" value="${esc(a.COMMON==='None'?'':a.COMMON||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('e_COMMON',true)"></div>
     <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="e_DBH" value="${esc(a.DBH??'')}" placeholder="Tap to choose DBH" onclick="openDbhPicker('e_DBH')"></div>
     <div class="field"><label>Overall health</label><select id="e_OVERHEAL" onchange="onHealthChange('e')">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
     <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
@@ -1900,7 +1924,7 @@ function openDashboard(){
       <div class="attr"><div class="k">Logs recorded (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayLogged}</div></div>
       <div class="attr"><div class="k">Total actions (session)</div><div class="v" style="font-size:26px;font-family:var(--mono);color:var(--amber)">${total}</div></div>
     </div>
-    <div class="note" style="margin-top:6px">Session counts update live as you work. Below is the whole crew's activity, pulled from the layer.</div>
+    <div class="note" style="margin-top:6px">“Session” counts only what <b>you</b> have done since opening the app (they reset when the app reloads). The numbers below are the <b>true daily totals for the whole crew</b>, pulled live from the layer.</div>
     <div class="slabel">From the live layer · <span id="dashPeriodLbl">Today</span></div>
     <div class="hlpicks">
       <button class="hlp" id="dp_today" onclick="setDashPeriod('today')">Today</button>
@@ -1908,6 +1932,8 @@ function openDashboard(){
       <button class="hlp" id="dp_7d" onclick="setDashPeriod('7d')">Last 7 days</button>
     </div>
     <div id="dashLive"><div class="empty">Loading…</div></div>
+    <div class="slabel">Trees by collector · <span class="dashPeriodLbl2">today</span></div>
+    <div id="dashCollector"><div class="empty">Loading…</div></div>
     <div class="slabel">Logs by inspector</div>
     <div id="dashInsp"><div class="empty">Loading…</div></div>
     <div class="slabel">Logs by activity</div>
@@ -1929,6 +1955,7 @@ function setDashPeriod(k){ dashPeriod=k; ['today','yesterday','7d'].forEach(x=>{
 function loadDashPeriod(kind){
   const B=periodBounds(kind); const A=tsLit(B.s), Z=tsLit(B.e);
   const lbl=document.getElementById('dashPeriodLbl'); if(lbl) lbl.textContent=B.label;
+  document.querySelectorAll('.dashPeriodLbl2').forEach(e=>e.textContent=B.label.toLowerCase());
   ['dashLive','dashInsp','dashAct'].forEach(id=>{const el=document.getElementById(id); if(el)el.innerHTML='<div class="empty">Loading…</div>';});
   const wAdd=`CreationDate >= ${A} AND CreationDate < ${Z}`;
   const wEdit=`EditDate >= ${A} AND EditDate < ${Z} AND CreationDate < ${A}`;
@@ -1944,6 +1971,17 @@ function loadDashPeriod(kind){
     const mx=Math.max(added||0,edited||0,logged||0,1);
     box.innerHTML=bar('Added',added||0,mx,cssv('--good'))+bar('Edited',edited||0,mx,cssv('--pot'))+bar('Logged',logged||0,mx,cssv('--amber'));
   });
+  // Trees by collector: who added or edited trees in this window (tree layer, grouped by INSPECTR)
+  const wTouched="(CreationDate >= "+A+" AND CreationDate < "+Z+") OR (EditDate >= "+A+" AND EditDate < "+Z+")";
+  treeLayer.queryFeatures({where:wTouched, outFields:["INSPECTR"], returnGeometry:false}).then(res=>{
+    const byC={};
+    res.features.forEach(f=>{ const who=(f.attributes.INSPECTR||'(unnamed)'); byC[who]=(byC[who]||0)+1; });
+    const el=document.getElementById('dashCollector'); if(!el)return;
+    const ent=Object.entries(byC).sort((x,y)=>y[1]-x[1]);
+    if(!ent.length){ el.innerHTML='<div class="empty">No trees collected in this period.</div>'; return; }
+    const mx=Math.max(...ent.map(e=>e[1]));
+    el.innerHTML=ent.map(([k,v])=>'<div class="bar"><div class="lab">'+esc(k)+'</div><div class="track"><div class="fill" style="width:'+Math.max(4,v/mx*100)+'%;background:'+cssv('--brand')+'"></div></div><div class="vv">'+v+'</div></div>').join('');
+  }).catch(()=>{ const el=document.getElementById('dashCollector'); if(el) el.innerHTML='<div class="empty">Collector totals need editor tracking enabled on the service.</div>'; });
   inspLayer.queryFeatures({where:wLog, outFields:["inspector_name","activity_type"], returnGeometry:false}).then(res=>{
     const byI={}, byA={};
     res.features.forEach(f=>{const a=f.attributes;const ins=a.inspector_name||'(none)';const act=a.activity_type||'(none)';byI[ins]=(byI[ins]||0)+1;byA[act]=(byA[act]||0)+1;});
