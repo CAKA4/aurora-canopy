@@ -355,7 +355,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
     <span>ADD <b id="rAdded">0</b></span>
     <span>EDIT <b id="rEdited">0</b></span>
     <span>LOG <b id="rLogged">0</b></span>
-    <span class="warn">QUEUE <b id="rQueue">0</b></span>
+    <span class="warn" onclick="uploadAllNow()" style="cursor:pointer" title="Tap to upload now">QUEUE <b id="rQueue">0</b></span>
   </div>
 </div>
 
@@ -2113,7 +2113,9 @@ function openRecords(){
         <button class="hlp${_holdUploads?'':' on'}" onclick="setHoldUploads(false); openRecords()">Upload as you go</button>
       </div>
       <div class="hint" style="margin-bottom:6px">${_holdUploads?('\u23f8 Holding uploads — '+q+' saved on device, will send when you upload.'):'\u2191 Uploading automatically in the background.'}</div>
-      ${q?`<div class="actions"><button class="btn primary" onclick="uploadAllNow();closeSheet()">Upload all now (${q})</button></div>`:'<div class="hint">Nothing waiting — all work is on the server.</div>'}
+      <div class="actions">${q
+        ? `<button class="btn primary" style="width:100%" onclick="uploadAllNow();closeSheet()">\u2191 Upload now (${q} waiting)</button>`
+        : `<button class="btn ghost" style="width:100%" onclick="uploadAllNow()" disabled>\u2713 All work is on the server</button>`}</div>
       <div class="slabel">Photo quality</div>
       <div class="note" style="margin-bottom:8px">Lower quality uploads faster on weak signal. Higher keeps more detail for defects.</div>
       <div class="hlpicks" id="photoPresetPicks">
