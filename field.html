@@ -515,8 +515,9 @@ function refreshHighlight(){
     const ids=Array.from(_touchedLocally).map(x=>"'"+String(x).replace(/'/g,"''")+"'").join(',');
     where = "("+where+") AND GlobalID NOT IN ("+ids+")";
   }
+  // Setting definitionExpression re-filters the already-loaded features locally (instant, no network).
+  // We deliberately DO NOT call highlightLayer.refresh() here — that would hit the server and stall on poor signal.
   highlightLayer.definitionExpression=where;
-  try{ highlightLayer.refresh(); }catch(e){}
 }
 let geometryEngine=null, gpsWatch=null, gpsGraphic=null, gpsRing=null, lastGps=null;
 let followGps=true, _userPanned=false;   // map auto-centers on GPS until the user pans
@@ -677,9 +678,13 @@ function confirmDialog(title,msg,yesLabel,onYes){
 }
 function cfNo(){ document.getElementById('confirmWrap').classList.remove('show'); cfCallback=null; }
 /* load & show attachments for a feature */
-function showAttachments(layer, oid, containerId, label){
+function showAttachments(layer, oid, containerId, label, forced){
   const box=document.getElementById(containerId); if(!box)return;
   if(!layer||oid==null){box.innerHTML='';return;}
+  if(!forced && (_holdUploads || !navigator.onLine)){
+    box.innerHTML='<div class="empty" style="cursor:pointer" onclick="showAttachments(('+(layer===inspLayer?'inspLayer':'treeLayer')+'),'+oid+',\''+containerId+'\',\''+label+'\',true)">Photos not loaded (collect mode). Tap to load.</div>';
+    return;
+  }
   layer.queryAttachments({objectIds:[oid]}).then(mapp=>{
     const atts=(mapp&&mapp[oid])||[];
     if(!atts.length){box.innerHTML='';return;}
@@ -1230,7 +1235,13 @@ function openTree(g){
   }).catch(()=>{}); }
 }
 let histCache=[];
-function loadHistory(gid){
+function loadHistory(gid, forced){
+  const box0=document.getElementById('histBox');
+  // In collect/offline mode, don't stall the form on a server query — let the user load it on demand.
+  if(!forced && (_holdUploads || !navigator.onLine)){
+    if(box0) box0.innerHTML='<div class="empty" style="cursor:pointer" onclick="loadHistory(\''+String(gid).replace(/'/g,"\\'")+'\',true)">Inspection history not loaded (collect mode). Tap to load.</div>';
+    return;
+  }
   inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}'`, outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"]})
     .then(res=>{
       const box=document.getElementById('histBox'); if(!box)return;
@@ -1468,7 +1479,8 @@ function saveTree(){
     const editPhotos=photosToRecords(editPhotoFiles.slice()); editPhotoFiles=[];
     queueJob('tree-edit', {attributes:g.attributes, oid:(toid!=null?toid:null), photos:editPhotos}).then(()=>{
       if(btn){btn.disabled=false; btn.textContent='Save tree';}
-      treeLayer.refresh(); markTreeVisitedLocally(g.attributes&&g.attributes.GlobalID);
+      if(navigator.onLine && !_holdUploads){ treeLayer.refresh(); }   // skip server refresh in collect/offline mode
+      markTreeVisitedLocally(g.attributes&&g.attributes.GlobalID);
       rememberLastTree(g.attributes);
       flushQueue();   // try to upload right away; stays queued if signal is poor
       // continue the correction/re-inspection flow (its log is also save-first, below)
