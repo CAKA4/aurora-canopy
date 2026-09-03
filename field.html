@@ -503,6 +503,21 @@ function pickDateTypeField(fields){
 }
 let taxoLayer=null, esriRequest=null, projection=null, SpatialRef=null, FeatureLayerC=null, parksLayer=null, PolylineC=null;
 let highlightLayer=null, highlightWhere="DATE_NEW < DATE '2023-01-01'";
+// trees updated on THIS device this session — their yellow "not visited" halo should clear immediately,
+// even while the edit is still queued and not yet on the server.
+const _touchedLocally=new Set();
+function markTreeVisitedLocally(gid){ if(!gid) return; _touchedLocally.add(String(gid)); refreshHighlight(); }
+// rebuild the halo layer's filter = the base "old tree" rule, minus anything we've touched locally
+function refreshHighlight(){
+  if(!highlightLayer) return;
+  let where=highlightWhere;
+  if(_touchedLocally.size){
+    const ids=Array.from(_touchedLocally).map(x=>"'"+String(x).replace(/'/g,"''")+"'").join(',');
+    where = "("+where+") AND GlobalID NOT IN ("+ids+")";
+  }
+  highlightLayer.definitionExpression=where;
+  try{ highlightLayer.refresh(); }catch(e){}
+}
 let geometryEngine=null, gpsWatch=null, gpsGraphic=null, gpsRing=null, lastGps=null;
 let followGps=true, _userPanned=false;   // map auto-centers on GPS until the user pans
 let derived={};   // auto-computed field values for the tree currently being added/edited
@@ -1453,7 +1468,7 @@ function saveTree(){
     const editPhotos=photosToRecords(editPhotoFiles.slice()); editPhotoFiles=[];
     queueJob('tree-edit', {attributes:g.attributes, oid:(toid!=null?toid:null), photos:editPhotos}).then(()=>{
       if(btn){btn.disabled=false; btn.textContent='Save tree';}
-      treeLayer.refresh(); if(highlightLayer) highlightLayer.refresh();
+      treeLayer.refresh(); markTreeVisitedLocally(g.attributes&&g.attributes.GlobalID);
       rememberLastTree(g.attributes);
       flushQueue();   // try to upload right away; stays queued if signal is poor
       // continue the correction/re-inspection flow (its log is also save-first, below)
@@ -1957,7 +1972,7 @@ setInterval(function(){ if(!_holdUploads && navigator.onLine){ Buffer.count().th
 /* ---- map highlight by last-inventory date (DATE_NEW) ---- */
 function applyHighlight(where,lbl){
   highlightWhere=where;
-  if(highlightLayer) highlightLayer.definitionExpression=where;
+  refreshHighlight();
   const el=document.getElementById('flagLbl'); if(el)el.textContent=lbl;
   const btn=document.getElementById('btnFlag'); if(btn)btn.classList.toggle('on', where!=="1=2");
   toast('Highlight: '+lbl,'ok'); closeSheet();
