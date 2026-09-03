@@ -383,6 +383,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
   <button class="tbtn" id="btnLayers" onclick="openLayers()">LAYERS<small>on/off</small></button>
   <button class="tbtn" id="btnFlag" onclick="openHighlight()">FLAG<small id="flagLbl">pre-2023</small></button>
   <button class="tbtn" id="btnDash" onclick="openDashboard()">DASH<small>today</small></button>
+  <button class="tbtn" id="btnPreload" onclick="preloadArea()">AREA<small id="preloadLbl">load</small></button>
   <button class="tbtn" id="btnRec" onclick="openRecords()">SYNC<small id="syncLbl">idle</small></button>
 </div>
 <div id="layersOverlay" class="pick" onclick="if(event.target===this)layersClose()">
@@ -561,7 +562,7 @@ require([
     const renderer=new UniqueValueRenderer({valueExpression:normExpr,defaultSymbol:sym("#7A868E"),defaultLabel:"Other"});
     Object.keys(HEALTH_COLOR).forEach(v=>renderer.addUniqueValueInfo({value:v,symbol:sym(HEALTH_COLOR[v])}));
 
-    treeLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["*"], renderer, minScale:15000, maxScale:0});
+    treeLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["*"], renderer, minScale:15000, maxScale:0, refreshInterval:0});
     inspLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.inspTableId, outFields:["*"]});
 
     const B=CONFIG.parcelBase;
@@ -627,7 +628,7 @@ require([
     window.addEventListener("online", flushQueue);
     window.addEventListener("offline", ()=>document.getElementById('offline').classList.add('show'));
     if(!navigator.onLine) document.getElementById('offline').classList.add('show');
-    Buffer.init().then(()=>Buffer.count().then(updateQueueBadge));
+    Buffer.init().then(()=>{ requestPersistence(); Buffer.count().then(n=>{ updateQueueBadge(n); if(n>0 && navigator.onLine) flushQueue(); }); });
   }
 });
 
@@ -1177,6 +1178,8 @@ let toastT;function toast(m,k){const el=document.getElementById('toast');const c
 /* ------------- TREE detail ------------- */
 function openTree(g){
   if(addMode)toggleAdd();
+  // if we pre-loaded this area, merge the cached full attributes so the form is complete & instant
+  if(g.attributes&&g.attributes.GlobalID&&_preloadCache[g.attributes.GlobalID]){ g.attributes=Object.assign({}, _preloadCache[g.attributes.GlobalID], g.attributes); }
   selectedGraphic=g; const a=g.attributes; const gid=a.GlobalID;
   const color=healthColor(a.OVERHEAL);
   const label=val(a.COMMON)!=='—'?a.COMMON:(val(a.SPECIES)!=='—'?a.SPECIES:'Unlabeled tree');
@@ -1201,9 +1204,12 @@ function openTree(g){
   openSheet();
   loadHistory(gid);
   showAttachments(treeLayer, treeLayer&&a[treeLayer.objectIdField], 'treePhotos', 'Tree photos');
-  // rendered map features may not carry every field — fetch the full record, explicitly naming DATE
+  // The tree layer loads with outFields:["*"], so a tapped graphic already carries every field —
+  // open the form instantly from local data. Only if a needed field is genuinely missing (rare) do
+  // we fall back to a live query, and even then it's non-blocking so the form is already usable.
   const _oid = treeLayer && a[treeLayer.objectIdField];
-  if(_oid!=null){ treeLayer.queryFeatures({objectIds:[_oid], outFields:["*"], returnGeometry:false}).then(r=>{
+  const hasCore = ('DATE_NEW' in a) || ('DATE_' in a) || ('OVERHEAL' in a);
+  if(_oid!=null && !hasCore){ treeLayer.queryFeatures({objectIds:[_oid], outFields:["*"], returnGeometry:false}).then(r=>{
     if(!r.features.length) return; const fa=r.features[0].attributes; Object.assign(g.attributes, fa);
     const chip=document.getElementById('lastInspChip'); if(chip) chip.textContent='🗓 Last inspected '+lastInvDate(fa);
   }).catch(()=>{}); }
@@ -1442,27 +1448,26 @@ function saveTree(){
     g.attributes.DATE_=Date.now();
     if(treeDateField && treeDateField!=='DATE_NEW' && treeDateField!=='DATE_') g.attributes[treeDateField]=Date.now();
     g.attributes.INSPECTR=currentInspector||g.attributes.INSPECTR||null;
-    treeLayer.applyEdits({updateFeatures:[g]}).then(r=>{
-      if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
-      treeLayer.refresh(); if(highlightLayer) highlightLayer.refresh();   // drop the yellow halo now that it's visited
-      bumpDay('edit');
-      rememberLastTree(g.attributes);   // copyable for 'Same as last tree'
-      // attach a photo added during the edit to the tree point (best-effort, non-blocking)
-      if(editPhotoFiles.length){ const toid=g.attributes[treeLayer.objectIdField]; if(toid!=null) addPhotosTo(treeLayer, toid, editPhotoFiles).catch(()=>{}); editPhotoFiles=[]; }
-      // writePriorLog decides: a same-session correction updates the existing record (no new log);
-      // a genuine later re-inspection carries history forward and opens a fresh inspection note.
+    // SAVE-FIRST: queue the tree edit (with any edit photo) to the device immediately.
+    const toid=g.attributes[treeLayer.objectIdField];
+    const editPhotos=photosToRecords(editPhotoFiles.slice()); editPhotoFiles=[];
+    queueJob('tree-edit', {attributes:g.attributes, oid:(toid!=null?toid:null), photos:editPhotos}).then(()=>{
+      if(btn){btn.disabled=false; btn.textContent='Save tree';}
+      treeLayer.refresh(); if(highlightLayer) highlightLayer.refresh();
+      rememberLastTree(g.attributes);
+      flushQueue();   // try to upload right away; stays queued if signal is poor
+      // continue the correction/re-inspection flow (its log is also save-first, below)
       writePriorLog(g).then(result=>{
         const kind=result&&result.kind;
         if(kind==='correction' && result.record){
-          // reopen the ORIGINAL log, pre-filled with the corrected values — saving updates it (no new log)
           toast('Correcting the existing log','ok');
           openInspection(g,'Inspection',result.record,true);
         } else {
-          toast('Tree updated — add your inspection note','ok');
+          toast('Tree saved on device \u2014 add your inspection note','ok');
           openInspection(g,'Inspection');
         }
       });
-    }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Save tree';} toast('Save failed: '+(err.message||err),'err'); });
+    }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Save tree';} toast('Could not save on device: '+((err&&err.message)||err),'err'); });
   });
 }
 
@@ -1574,26 +1579,26 @@ function saveNewTree(){
     DATE_NEW:Date.now(), DATE_:Date.now(), INSPECTR:(currentInspector||null),
     ...( (treeDateField && treeDateField!=='DATE_NEW') ? {[treeDateField]:Date.now()} : {} )
   }});
-  applyEditsWithRetry(treeLayer, {addFeatures:[g]}, 2).then(r=>{
-    const res=r.addFeatureResults[0]; if(res.error) throw res.error;
-    clearProvisional(); if(addMode)toggleAdd(); treeLayer.refresh(); bumpDay('add');
-    const _np=newPhotoFiles.slice(); window._newTreeOid=res.objectId;
-    const attach = _np.length ? addPhotosTo(treeLayer, res.objectId, _np).catch(()=>{}) : Promise.resolve();
-    return attach.then(()=> treeLayer.queryFeatures({objectIds:[res.objectId], outFields:["*"]}));
-  }).then(q=>{
-    const ng=q.features[0]; treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
-    toast('Tree created — log its first activity','ok'); openInspection(ng,'Inspection');
-  }).catch(err=>{
+  // SAVE-FIRST: write the whole tree (with photos) to the device immediately, then try to upload.
+  const photos=photosToRecords(newPhotoFiles.slice());
+  queueJob('tree-add', {attributes:g.attributes, geometry:g.geometry, photos:photos}).then(()=>{
+    // the record is now safe on the device — clear the form right away
+    clearProvisional(); if(addMode)toggleAdd();
     if(btn){btn.disabled=false; btn.textContent='Create tree';}
-    const msg=(err&&(err.message||err.name))||String(err);
-    // network-type failures: tell the user their work is safe to retry, don't lose the form
-    if(/load failed|network|failed to fetch|timeout/i.test(msg)){
-      toast('No connection — check signal and tap Create tree again','warn');
-    } else {
-      toast('Create failed: '+msg,'err');
-    }
+    toast('Tree saved on device \u2014 uploading…','ok');
+    closeSheet();
+    // attempt an immediate upload; if the signal is poor it stays queued and retries automatically
+    flushQueue();
+  }).catch(err=>{
+    // the ONLY way to reach here is the device store itself failing — surface it loudly, keep the form
+    if(btn){btn.disabled=false; btn.textContent='Create tree';}
+    toast('Could not save on device: '+((err&&err.message)||err)+' \u2014 do not close the app','err');
   });
   });
+}
+// Convert File/Blob photo inputs into plain records safe to store in IndexedDB.
+function photosToRecords(files){
+  return (files||[]).filter(Boolean).map(f=>({ blob:f, name:(f.name||('photo_'+Date.now()+'.jpg')), type:(f.type||'image/jpeg') }));
 }
 // applyEdits with a small automatic retry for transient network / token failures
 function applyEditsWithRetry(layer, edits, tries){
@@ -1782,34 +1787,17 @@ function submitInspection(){
     return;
   }
 
-  if(!navigator.onLine){
-    Buffer.add({layer:'insp', attributes:attrs, photos:photoFiles.slice(), treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{
-      Buffer.count().then(updateQueueBadge);
-      if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;treeLayer.refresh();}
-      toast('Offline — log saved on device','warn'); closeSheet();
-    });
-    return;
-  }
-  const feature=new GraphicC({attributes:attrs});
-  const _photoAtSave=photoFiles.slice();   // capture now; the form may be torn down before the promises resolve
-  inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
-    const res=r.addFeatureResults[0]; if(res.error) throw res.error;
-    bumpDay('log');
-    // remember this log for same-session correction detection
-    noteSessionLog(gid, res.objectId, Object.assign({}, attrs, {[inspLayer.objectIdField]:res.objectId}));
-    if(_photoAtSave && _photoAtSave.length){
-      // attach every photo to BOTH the inspection record and the tree point (mirrors Field Maps)
-      const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
-      return addPhotosTo(inspLayer, res.objectId, _photoAtSave)
-        .then(()=> treeOid!=null ? addPhotosTo(treeLayer, treeOid, _photoAtSave).catch(()=>{}) : null);
-    }
-  }).then(()=>{
-    if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
-      treeLayer.applyEdits({updateFeatures:[g]}).then(()=>treeLayer.refresh());}
-    toast('Log saved','ok'); closeSheet();
-  }).catch(err=>{
-    Buffer.add({layer:'insp', attributes:attrs, photos:photoFiles.slice(), treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');closeSheet();});
-  });
+  // SAVE-FIRST new log: queue it (with photos) on the device immediately, then try to upload.
+  const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
+  const logPhotos=photosToRecords(photoFiles.slice());
+  // reflect the new condition on the tree locally so the map/detail update right away
+  if(attrs.condition_at_inspection){ g.attributes.OVERHEAL=attrs.condition_at_inspection; treeLayer.refresh(); }
+  queueJob('log', {attributes:attrs, photos:logPhotos, treeOid:treeOid}).then(()=>{
+    noteSessionLog(gid, null, attrs);   // enable same-session correction detection even before upload
+    btn.disabled=false; btn.textContent='Save log';
+    toast('Log saved on device \u2014 uploading…','ok'); closeSheet();
+    flushQueue();
+  }).catch(err=>{ btn.disabled=false; btn.textContent='Save log'; toast('Could not save on device: '+((err&&err.message)||err),'err'); });
 }
 // Build a form holding the file (ArcGIS JS 4.x addAttachment needs an HTMLFormElement, not FormData).
 // A fresh form is built per call so the same photo can be attached to more than one layer.
@@ -1837,36 +1825,133 @@ function addTreePhoto(treeOid, file){ return addPhotoTo(treeLayer, treeOid, file
 // attach to the tree from a named live input if present, else from the stored File
 function addTreePhotoFrom(inputId, treeOid, file){ return addPhotoTo(treeLayer, treeOid, file); }
 
-/* ------------- offline buffer (IndexedDB) ------------- */
+/* ------------- FAILPROOF save-first sync engine (IndexedDB) ------------- */
+// Every add/edit/log is written to the device FIRST (with photos as blobs), then uploaded.
+// A record is only deleted from the device after the server confirms the record AND all photos.
 const Buffer={
   db:null,
-  init(){return new Promise((res)=>{const rq=indexedDB.open('aurora-canopy',1);rq.onupgradeneeded=e=>{e.target.result.createObjectStore('pending',{keyPath:'id',autoIncrement:true});};rq.onsuccess=e=>{this.db=e.target.result;res();};rq.onerror=()=>res();});},
-  add(rec){return new Promise((res)=>{if(!this.db)return res();const tx=this.db.transaction('pending','readwrite');tx.objectStore('pending').add(rec);tx.oncomplete=()=>res();tx.onerror=()=>res();});},
-  all(){return new Promise((res)=>{if(!this.db)return res([]);const out=[];const tx=this.db.transaction('pending','readonly');tx.objectStore('pending').openCursor().onsuccess=e=>{const c=e.target.result;if(c){out.push({id:c.key,...c.value});c.continue();}else res(out);};});},
-  remove(id){return new Promise((res)=>{if(!this.db)return res();const tx=this.db.transaction('pending','readwrite');tx.objectStore('pending').delete(id);tx.oncomplete=()=>res();});},
+  init(){return new Promise((res)=>{
+    // bump to v2: store keeps full jobs incl. photo blobs
+    const rq=indexedDB.open('aurora-canopy',2);
+    rq.onupgradeneeded=e=>{ const db=e.target.result; if(!db.objectStoreNames.contains('pending')) db.createObjectStore('pending',{keyPath:'id',autoIncrement:true}); };
+    rq.onsuccess=e=>{ this.db=e.target.result; res(); };
+    rq.onerror=()=>res();
+  });},
+  add(rec){return new Promise((res,rej)=>{ if(!this.db)return rej(new Error('no db')); const tx=this.db.transaction('pending','readwrite'); const r=tx.objectStore('pending').add(rec); r.onsuccess=()=>{ rec.id=r.result; res(r.result); }; tx.onerror=()=>rej(tx.error||new Error('add failed')); });},
+  put(rec){return new Promise((res,rej)=>{ if(!this.db)return rej(new Error('no db')); const tx=this.db.transaction('pending','readwrite'); tx.objectStore('pending').put(rec); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); });},
+  all(){return new Promise((res)=>{ if(!this.db)return res([]); const out=[]; const tx=this.db.transaction('pending','readonly'); tx.objectStore('pending').openCursor().onsuccess=e=>{const c=e.target.result; if(c){out.push(Object.assign({id:c.key},c.value)); c.continue();} else res(out);}; });},
+  remove(id){return new Promise((res)=>{ if(!this.db)return res(); const tx=this.db.transaction('pending','readwrite'); tx.objectStore('pending').delete(id); tx.oncomplete=()=>res(); tx.onerror=()=>res(); });},
   count(){return this.all().then(a=>a.length);}
 };
-function updateQueueBadge(n){const el=document.getElementById('rQueue');if(el){el.textContent=n;el.style.color=n?cssv('--amber'):'';}document.getElementById('syncLbl').textContent=n?('pending '+n):'idle';}
-function flushQueue(){
-  document.getElementById('offline').classList.remove('show');
-  Buffer.all().then(items=>{
-    if(!items.length)return;
-    toast(`Reconnected — syncing ${items.length}…`);
-    document.getElementById('syncLbl').textContent='syncing…';
-    (function next(i){
-      if(i>=items.length){Buffer.count().then(updateQueueBadge);toast('All buffered edits synced','ok');if(selectedGraphic)openTree(selectedGraphic);return;}
-      const it=items[i];
-      const feature=new GraphicC({attributes:it.attributes});
-      inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
-        const res=r.addFeatureResults[0]; if(res.error) throw res.error;
-        bumpDay('log');
-        if(it.photos&&it.photos.length){ return addPhotosTo(inspLayer, res.objectId, it.photos).then(()=> it.treeOid!=null ? addPhotosTo(treeLayer, it.treeOid, it.photos).catch(()=>{}) : null); }
-        else if(it.photo){ return addPhoto(res.objectId, it.photo).then(()=> it.treeOid!=null ? addTreePhoto(it.treeOid, it.photo).catch(()=>{}) : null); }
-      }).then(()=>Buffer.remove(it.id)).then(()=>{Buffer.count().then(updateQueueBadge);next(i+1);})
-      .catch(()=>next(i+1)); // leave in buffer, try later
-    })(0);
-  });
+// Ask the OS not to evict our data (best-effort; honored by most browsers).
+async function requestPersistence(){ try{ if(navigator.storage&&navigator.storage.persist){ const already=await navigator.storage.persisted(); if(!already) await navigator.storage.persist(); } }catch(e){} }
+
+// Queue a job on the device. kind: 'tree-add' | 'tree-edit' | 'log'.
+// payload carries attributes + geometry (for adds) + photo blobs. Returns the job id.
+function queueJob(kind, payload){
+  const job={ kind:kind, ts:Date.now(), tries:0, status:'pending', payload:payload };
+  return Buffer.add(job).then(id=>{ Buffer.count().then(updateQueueBadge); return id; });
 }
+
+let _flushing=false;
+// COLLECT MODE: when true, uploads are deferred so all signal/attention goes to fast collection.
+// Records still save to the device immediately; you batch-upload when ready.
+let _holdUploads=false;
+(function(){ try{ _holdUploads = localStorage.getItem('aurora_hold_uploads')==='1'; }catch(e){} })();
+function setHoldUploads(on){ _holdUploads=!!on; try{ localStorage.setItem('aurora_hold_uploads', on?'1':'0'); }catch(e){}
+  updateHoldUI();
+  if(!on){ // leaving collect mode -> push everything now
+    Buffer.count().then(n=>{ if(n>0 && navigator.onLine) flushQueue(); });
+  }
+}
+function updateHoldUI(){
+  const s=document.getElementById('syncLbl');
+  Buffer.count().then(n=>{
+    if(s){ s.textContent = _holdUploads ? ('hold '+n) : (n?('pending '+n):'idle'); }
+  });
+  const b=document.getElementById('btnRec'); if(b) b.classList.toggle('holding', _holdUploads);
+}
+function uploadAllNow(){
+  if(!navigator.onLine){ toast('No connection right now — will keep your data safe until there is','warn'); return; }
+  toast('Uploading all saved work…','ok'); flushQueue(true);
+}
+function updateQueueBadge(n){
+  const el=document.getElementById('rQueue'); if(el){ el.textContent=n; el.style.color=n?cssv('--amber'):''; }
+  const s=document.getElementById('syncLbl'); if(s) s.textContent=_holdUploads?('hold '+n):(n?('pending '+n):'idle');
+  const off=document.getElementById('offline'); if(off){ if(n && !navigator.onLine) off.classList.add('show'); else off.classList.remove('show'); }
+}
+
+// Upload one job. Resolves true if fully synced (record + all photos), false to keep it buffered.
+async function syncJob(job){
+  const p=job.payload||{};
+  try{
+    if(job.kind==='tree-add'){
+      const g=new GraphicC({geometry:p.geometry, attributes:p.attributes});
+      const r=await treeLayer.applyEdits({addFeatures:[g]});
+      const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+      const oid=res.objectId;
+      await uploadPhotos(treeLayer, oid, p.photos);   // photos onto the tree
+      bumpDay('add'); treeLayer.refresh();
+      return true;
+    }
+    if(job.kind==='tree-edit'){
+      // update by GlobalID (stable across sessions) — look up the current OBJECTID
+      const gid=p.attributes.GlobalID;
+      let oid=p.oid;
+      if(oid==null && gid){ const q=await treeLayer.queryFeatures({where:"GlobalID='"+String(gid).replace(/'/g,"''")+"'", outFields:[treeLayer.objectIdField], returnGeometry:false}); if(q.features.length) oid=q.features[0].attributes[treeLayer.objectIdField]; }
+      const attrs=Object.assign({}, p.attributes); if(oid!=null) attrs[treeLayer.objectIdField]=oid;
+      const edit={attributes:attrs}; if(p.geometry) edit.geometry=p.geometry;
+      const r=await treeLayer.applyEdits({updateFeatures:[edit]});
+      const res=r.updateFeatureResults[0]; if(res&&res.error) throw res.error;
+      if(oid!=null) await uploadPhotos(treeLayer, oid, p.photos);
+      bumpDay('edit'); treeLayer.refresh();
+      return true;
+    }
+    if(job.kind==='log'){
+      const g=new GraphicC({attributes:p.attributes});
+      const r=await inspLayer.applyEdits({addFeatures:[g]});
+      const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+      const oid=res.objectId;
+      await uploadPhotos(inspLayer, oid, p.photos);                     // onto the log
+      if(p.treeOid!=null) await uploadPhotos(treeLayer, p.treeOid, p.photos).catch(()=>{});   // mirror onto tree
+      bumpDay('log');
+      return true;
+    }
+  }catch(e){ return false; }
+  return false;
+}
+// upload an array of {blob,name,type} photos, one at a time. Throws if any fail (so the job stays buffered).
+async function uploadPhotos(layer, oid, photos){
+  const list=(photos||[]).filter(Boolean);
+  for(const ph of list){
+    const file=ph.blob?new File([ph.blob], ph.name||'photo.jpg', {type:ph.type||'image/jpeg'}):ph;
+    await addPhotoTo(layer, oid, file);   // throws on failure
+  }
+}
+
+// Flush the whole queue. Only removes a job when syncJob confirms full success.
+function flushQueue(force){
+  if(_holdUploads && !force){ updateHoldUI(); return; }   // collect mode: don't upload yet
+  if(_flushing) return; _flushing=true;
+  Buffer.all().then(async items=>{
+    if(!items.length){ _flushing=false; updateQueueBadge(0); return; }
+    document.getElementById('offline').classList.remove('show');
+    const s=document.getElementById('syncLbl'); if(s) s.textContent='syncing…';
+    let synced=0;
+    for(const job of items){
+      const ok=await syncJob(job);
+      if(ok){ await Buffer.remove(job.id); synced++; }
+      else { job.tries=(job.tries||0)+1; job.status='retry'; try{ await Buffer.put(job); }catch(e){} }
+      const left=await Buffer.count(); updateQueueBadge(left);
+    }
+    _flushing=false;
+    const left=await Buffer.count();
+    if(left===0){ toast('All work synced to the server','ok'); if(selectedGraphic&&selectedGraphic.attributes) { try{ openTree(selectedGraphic); }catch(e){} } }
+    else { toast(synced+' synced, '+left+' still pending — will keep retrying','warn'); }
+  }).catch(()=>{ _flushing=false; });
+}
+// keep trying in the background while there's a queue and we have any connection
+setInterval(function(){ if(!_holdUploads && navigator.onLine){ Buffer.count().then(n=>{ if(n>0 && !_flushing) flushQueue(); }); } }, 20000);
 
 /* ------------- records / sync panel ------------- */
 /* ---- map highlight by last-inventory date (DATE_NEW) ---- */
@@ -1911,6 +1996,25 @@ function openHighlight(){
     <div class="frow"><div class="field"><label>From</label><input type="date" id="hlFrom"></div><div class="field"><label>To</label><input type="date" id="hlTo"></div></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Close</button><button class="btn brand" onclick="applyHighlightCustom()">Apply range</button></div>`;
   openSheet();
+}
+// Pre-load every tree in (and a little around) the current view into device memory, so that while
+// collecting in this area the map and forms read locally and feel instant even on poor signal.
+let _preloadCache={};   // GlobalID -> attributes (kept for the session)
+function preloadArea(){
+  const lbl=document.getElementById('preloadLbl');
+  if(!view||!treeLayer){ return; }
+  if(lbl) lbl.textContent='loading…';
+  const btn=document.getElementById('btnPreload'); if(btn) btn.classList.add('on');
+  // expand the current extent a bit so panning nearby stays instant
+  const ext=view.extent && view.extent.clone ? view.extent.clone().expand(1.6) : view.extent;
+  treeLayer.queryFeatures({geometry:ext, spatialRelationship:'intersects', outFields:['*'], returnGeometry:true, num:4000})
+    .then(res=>{
+      res.features.forEach(f=>{ const gid=f.attributes&&f.attributes.GlobalID; if(gid) _preloadCache[gid]=f.attributes; });
+      const n=res.features.length;
+      if(lbl) lbl.textContent=n+' ready';
+      toast(n+' trees loaded for this area — collection will be fast here','ok');
+    })
+    .catch(err=>{ if(lbl) lbl.textContent='retry'; toast('Could not load area: '+((err&&err.message)||err),'warn'); });
 }
 function openDashboard(){
   if(addMode)toggleAdd(); selectedGraphic=null;
@@ -2001,8 +2105,15 @@ function openRecords(){
         <div class="attr"><div class="k">Buffered</div><div class="v" style="color:${q?cssv('--amber'):''}">${q}</div></div>
         <div class="attr"><div class="k">Network</div><div class="v">${navigator.onLine?'online':'offline'}</div></div>
       </div>
-      <div class="note">Offline edits are held safely on this device and flush automatically when you reconnect.</div>
-      ${q?`<div class="actions"><button class="btn primary" onclick="flushQueue();closeSheet()">Sync ${q} now</button></div>`:''}
+      <div class="note">Every save is written to this device first, then uploaded. Your work is safe even on poor or no signal.</div>
+      <div class="slabel">Collect mode</div>
+      <div class="note" style="margin-bottom:8px">Turn ON to defer all uploads while collecting — so the signal is used only for loading trees, and moving tree to tree is fast. Turn OFF (or tap Upload all) to send everything.</div>
+      <div class="hlpicks">
+        <button class="hlp${_holdUploads?' on':''}" onclick="setHoldUploads(true); openRecords()">Collect (hold uploads)</button>
+        <button class="hlp${_holdUploads?'':' on'}" onclick="setHoldUploads(false); openRecords()">Upload as you go</button>
+      </div>
+      <div class="hint" style="margin-bottom:6px">${_holdUploads?('\u23f8 Holding uploads — '+q+' saved on device, will send when you upload.'):'\u2191 Uploading automatically in the background.'}</div>
+      ${q?`<div class="actions"><button class="btn primary" onclick="uploadAllNow();closeSheet()">Upload all now (${q})</button></div>`:'<div class="hint">Nothing waiting — all work is on the server.</div>'}
       <div class="slabel">Photo quality</div>
       <div class="note" style="margin-bottom:8px">Lower quality uploads faster on weak signal. Higher keeps more detail for defects.</div>
       <div class="hlpicks" id="photoPresetPicks">
