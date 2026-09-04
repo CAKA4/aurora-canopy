@@ -1802,8 +1802,17 @@ function submitInspection(){
       condition_at_inspection:a.OVERHEAL, Structdefe_at_inspection:a.STRUDEFE, Woundcank_at_inspection:a.WOUNCANK,
       Deaddecay_at_inspection:a.DEADDECAY, Failpote_at_inspection:a.FAILPOTE, Pestdisease_at_inspection:a.PESTDISEAS,
       Impediment_at_inspection:a.IMPEDMNT, DBH:(a.DBH!=null?a.DBH:null), recommendations:a.RECOTREA, Species:a.COMMON }); }
+    // capture any photo added while editing/correcting this log so it isn't dropped
+    const _editLogPhotos=photoFiles.slice();
+    const _treeOidForEdit = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
     inspLayer.applyEdits({updateFeatures:[{attributes:upd}]}).then(r=>{
       if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
+      // upload any newly-added photo to BOTH the log record and the tree point (best-effort)
+      if(_editLogPhotos.length){
+        return addPhotosTo(inspLayer, oid, _editLogPhotos)
+          .then(()=> _treeOidForEdit!=null ? addPhotosTo(treeLayer, _treeOidForEdit, _editLogPhotos).catch(()=>{}) : null);
+      }
+    }).then(()=>{
       editingInsp=null; resyncSnapshot=false; toast('Log updated','ok'); closeSheet();
     }).catch(err=>{ btn.disabled=false; btn.textContent='Save changes'; toast('Update failed: '+(err.message||err),'err'); });
     return;
@@ -1822,14 +1831,15 @@ function submitInspection(){
     flushQueue();
   }).catch(err=>{ btn.disabled=false; btn.textContent='Save log'; toast('Could not save on device: '+((err&&err.message)||err),'err'); });
 }
-// Build a form holding the file (ArcGIS JS 4.x addAttachment needs an HTMLFormElement, not FormData).
-// A fresh form is built per call so the same photo can be attached to more than one layer.
+// Build the attachment payload for addAttachment.
+// Android WebView/Chrome cannot reliably set input.files via DataTransfer (the photo comes through
+// empty, so nothing uploads), while iOS can — that mismatch is why photos saved on iPhone but not
+// Android. FormData works on BOTH platforms and is accepted by ArcGIS JS 4.x addAttachment.
+// A fresh FormData is built per call so the same photo can be attached to more than one layer.
 function _photoForm(file){
-  const form=document.createElement('form');
-  const input=document.createElement('input'); input.type='file'; input.name='attachment';
-  try{ const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; }catch(e){}
-  form.appendChild(input);
-  return form;
+  const fd=new FormData();
+  fd.append('attachment', file, (file&&file.name)||'photo.jpg');
+  return fd;
 }
 // attach many photos (array, may contain nulls from removed thumbnails) to one feature, in sequence
 function addPhotosTo(layer, oid, files){
