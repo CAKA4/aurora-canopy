@@ -1200,6 +1200,8 @@ function openTree(g){
   if(addMode)toggleAdd();
   // if we pre-loaded this area, merge the cached full attributes so the form is complete & instant
   if(g.attributes&&g.attributes.GlobalID&&_preloadCache[g.attributes.GlobalID]){ g.attributes=Object.assign({}, _preloadCache[g.attributes.GlobalID], g.attributes); }
+  // overlay any queued-but-not-uploaded edits so the form shows the latest saved values, not stale server data
+  if(g.attributes&&g.attributes.GlobalID&&_pendingEdits[g.attributes.GlobalID]){ g.attributes=Object.assign({}, g.attributes, _pendingEdits[g.attributes.GlobalID]); if(g.attributes.__geom){} }
   selectedGraphic=g; const a=g.attributes; const gid=a.GlobalID;
   const color=healthColor(a.OVERHEAL);
   const label=val(a.COMMON)!=='—'?a.COMMON:(val(a.SPECIES)!=='—'?a.SPECIES:'Unlabeled tree');
@@ -1385,38 +1387,22 @@ function correctionRecordFrom(last, g){
   return rec;
 }
 function writePriorLog(g){
+  // SAVE-FIRST / offline-safe: decide correction vs re-inspection using ONLY local session state.
+  // No direct server query or write here — anything we create is queued like everything else.
   if(!_preEdit || !g || !inspLayer) return Promise.resolve({kind:'reinspection'});
   const gid=g.attributes.GlobalID;
-
-  // ---- FAST, RELIABLE CORRECTION CHECK: did THIS app write a log for this tree within the window? ----
+  // Did THIS app record a log for this tree within the correction window this session?
   const s=_sessionLogs[String(gid)];
-  if(s && (Date.now()-s.ms) <= CORRECTION_WINDOW_MS && s.oid!=null){
-    const base = s.record || {}; base[inspLayer.objectIdField]=s.oid;
+  if(s && (Date.now()-s.ms) <= CORRECTION_WINDOW_MS){
+    // a fresh same-session log exists -> treat the edit as a correction of it (no new inspection form churn)
+    const base = s.record || {};
+    if(s.oid!=null) base[inspLayer.objectIdField]=s.oid;
     return Promise.resolve({kind:'correction', record:correctionRecordFrom(base, g)});
   }
-
-  // ---- otherwise fall back to querying the service (older logs from a previous session) ----
-  return inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}' AND activity_type IN ('Inspection','Planted')`, outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"], num:1}).then(res=>{
-    const now=Date.now();
-    const last=res.features.length?res.features[0].attributes:null;
-    let lastMs=null;
-    if(last){ const c=last.CreationDate!=null?last.CreationDate:last.created_date; const d=logDate(last);
-      lastMs = (c!=null? Number(c) : (d!=null? new Date(d).getTime() : null)); }
-
-    // (service-side correction detection only works if CreationDate is exposed; session check above is primary)
-    if(last && lastMs!=null && (now-lastMs) <= CORRECTION_WINDOW_MS){
-      return {kind:'correction', record:correctionRecordFrom(last, g)};
-    }
-
-    // ---- RE-INSPECTION: meaningful time has passed -> carry the pre-edit state forward as history ----
-    const oldDate=_preEdit.oldDate;
-    if(oldDate==null||oldDate==='') return {kind:'reinspection'};
-    if(last){
-      const sameDay=fmtDate(logDate(last))===fmtDate(oldDate);
-      const sameCond=String(last.condition_at_inspection==null?'':last.condition_at_inspection)===String(_preEdit.OVERHEAL==null?'':_preEdit.OVERHEAL);
-      const sameDbh=String(last.DBH==null?'':last.DBH)===String(_preEdit.DBH==null?'':_preEdit.DBH);
-      if(sameDay && sameCond && sameDbh) return {kind:'reinspection'};   // already recorded — don't duplicate
-    }
+  // Otherwise carry the PRIOR recorded state forward as a history log — but QUEUE it (save-first),
+  // never write it live. Then proceed as a normal re-inspection.
+  const oldDate=_preEdit.oldDate;
+  if(oldDate!=null && oldDate!==''){
     const attrs={};
     attrs[CONFIG.fkField]=gid; attrs.activity_type='Inspection';
     attrs.inspector_name=_preEdit.INSPECTR||currentInspector||'';
@@ -1427,8 +1413,10 @@ function writePriorLog(g){
     attrs.Impediment_at_inspection=_preEdit.IMPEDMNT; attrs.DBH=(_preEdit.DBH!=null?_preEdit.DBH:null);
     attrs.recommendations=_preEdit.RECOTREA; attrs.Species=_preEdit.COMMON;
     attrs.maintenance_notes='Prior recorded state, carried forward automatically before the '+today()+' update.';
-    return inspLayer.applyEdits({addFeatures:[new GraphicC({attributes:attrs})]}).then(()=>{ bumpDay('log'); return {kind:'reinspection'}; }).catch(()=>({kind:'reinspection'}));
-  }).catch(()=>({kind:'reinspection'}));
+    // queue it (device-first); don't block the flow on it
+    try{ queueJob('log', {attributes:attrs, photos:[], treeOid:(g.attributes[treeLayer.objectIdField]!=null?g.attributes[treeLayer.objectIdField]:null)}); }catch(e){}
+  }
+  return Promise.resolve({kind:'reinspection'});
 }
 // When a tree is Removed / Dead / Stump / Stump carving, its defect ratings are no longer
 // meaningful. Clear them to their blank/none value. Species, Site location and Comments are kept.
@@ -1477,6 +1465,7 @@ function saveTree(){
     // SAVE-FIRST: queue the tree edit (with any edit photo) to the device immediately.
     const toid=g.attributes[treeLayer.objectIdField];
     const editPhotos=photosToRecords(editPhotoFiles.slice()); editPhotoFiles=[];
+    applyPendingEdit(g.attributes&&g.attributes.GlobalID, g.attributes);   // reflect edit locally until it uploads
     queueJob('tree-edit', {attributes:g.attributes, oid:(toid!=null?toid:null), photos:editPhotos}).then(()=>{
       if(btn){btn.disabled=false; btn.textContent='Save tree';}
       if(navigator.onLine && !_holdUploads){ treeLayer.refresh(); }   // skip server refresh in collect/offline mode
@@ -1819,6 +1808,7 @@ function submitInspection(){
   const logPhotos=photosToRecords(photoFiles.slice());
   // reflect the new condition on the tree locally so the map/detail update right away
   if(attrs.condition_at_inspection){ g.attributes.OVERHEAL=attrs.condition_at_inspection; treeLayer.refresh(); }
+  if(attrs.condition_at_inspection && g && g.attributes && g.attributes.GlobalID){ applyPendingEdit(g.attributes.GlobalID, {OVERHEAL:attrs.condition_at_inspection}); }
   queueJob('log', {attributes:attrs, photos:logPhotos, treeOid:treeOid}).then(()=>{
     noteSessionLog(gid, null, attrs);   // enable same-session correction detection even before upload
     btn.disabled=false; btn.textContent='Save log';
@@ -1967,7 +1957,7 @@ function flushQueue(force){
     let synced=0;
     for(const job of items){
       const ok=await syncJob(job);
-      if(ok){ await Buffer.remove(job.id); synced++; }
+      if(ok){ await Buffer.remove(job.id); synced++; try{ const gid=job.payload&&job.payload.attributes&&job.payload.attributes.GlobalID; if(gid) clearPendingEdit(gid); }catch(e){} }
       else { job.tries=(job.tries||0)+1; job.status='retry'; try{ await Buffer.put(job); }catch(e){} }
       const left=await Buffer.count(); updateQueueBadge(left);
     }
@@ -2027,6 +2017,11 @@ function openHighlight(){
 // Pre-load every tree in (and a little around) the current view into device memory, so that while
 // collecting in this area the map and forms read locally and feel instant even on poor signal.
 let _preloadCache={};   // GlobalID -> attributes (kept for the session)
+// Locally-applied attribute changes that are queued but NOT yet uploaded. Keyed by GlobalID.
+// These are merged whenever a tree is opened so you always see your latest saved values.
+const _pendingEdits={};
+function applyPendingEdit(gid, attrs){ if(!gid) return; _pendingEdits[gid]=Object.assign({}, _pendingEdits[gid]||{}, attrs); if(_preloadCache[gid]) _preloadCache[gid]=Object.assign({}, _preloadCache[gid], attrs); }
+function clearPendingEdit(gid){ if(gid) delete _pendingEdits[gid]; }
 function preloadArea(){
   const lbl=document.getElementById('preloadLbl');
   if(!view||!treeLayer){ return; }
