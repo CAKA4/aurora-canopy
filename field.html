@@ -1811,10 +1811,8 @@ function submitInspection(){
     Buffer.add({layer:'insp', attributes:attrs, photos:photoFiles.slice(), treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');closeSheet();});
   });
 }
-// Build a form holding the file (ArcGIS JS 4.x addAttachment needs an HTMLFormElement, not FormData).
-// A fresh form is built per call so the same photo can be attached to more than one layer.
 // iOS accepts a populated file-input form; Android's DataTransfer/input.files is unreliable, so we
-// fall back to FormData there. Trying both covers every device — fixes "photo saves on iPhone, not Android."
+// fall back to FormData there. Trying both covers every device (fixes "photo saves on iPhone, not Android").
 function _photoFormEl(file){
   const form=document.createElement('form');
   const input=document.createElement('input'); input.type='file'; input.name='attachment';
@@ -1827,6 +1825,11 @@ function _photoFormData(file){
   fd.append('attachment', file, (file&&file.name)||'photo.jpg');
   return fd;
 }
+// attach many photos (array, may contain nulls from removed thumbnails) to one feature, in sequence
+function addPhotosTo(layer, oid, files){
+  const list=(files||[]).filter(Boolean);
+  return list.reduce((chain,f)=>chain.then(()=>addPhotoTo(layer,oid,f).catch(()=>{})), Promise.resolve());
+}
 function addPhotoTo(layer, oid, file){
   if(!layer||oid==null||!file) return Promise.resolve();
   const feature=new GraphicC({attributes:{[layer.objectIdField]:oid}});
@@ -1837,11 +1840,6 @@ function addPhotoTo(layer, oid, file){
     ? layer.addAttachment(feature, elForm).then(r=>{ if(r&&r.error) throw r.error; return r; })
     : Promise.reject(new Error('input.files unset'));
   return attempt.catch(()=> layer.addAttachment(feature, _photoFormData(file)).then(r=>{ if(r&&r.error) throw r.error; return r; }));
-}
-function addPhotoTo(layer, oid, file){
-  if(!layer||oid==null||!file) return Promise.resolve();
-  const feature=new GraphicC({attributes:{[layer.objectIdField]:oid}});
-  return layer.addAttachment(feature, _photoForm(file)).then(r=>{ if(r && r.error) throw r.error; return r; });
 }
 // inspection-record attachment (kept for existing callers)
 function addPhoto(oid, file){ return addPhotoTo(inspLayer, oid, file); }
