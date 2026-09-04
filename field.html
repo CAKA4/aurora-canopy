@@ -1721,12 +1721,18 @@ function handlePhotos(ev, wrapId, prevId, arr){
   files.forEach(f0=>{
     const cell=document.createElement('div'); cell.className='photocell';
     cell.innerHTML='<div class="fn">…</div>'; prev.appendChild(cell);
+    // Push the ORIGINAL file into the array IMMEDIATELY so it is present the instant the user hits Save,
+    // even if resizing is slow or fails (Android canvas.toBlob can stall on camera images). We then
+    // swap in the smaller resized version in-place once it is ready — the slot index never changes.
+    const idx=arr.length; arr.push(f0);
     resizeImage(f0).then(f=>{
-      arr.push(f);
-      const idx=arr.length-1;
+      arr[idx]=f;                          // replace original with resized (same slot)
       const r=new FileReader();
-      r.onload=e=>{ cell.innerHTML=`<img src="${e.target.result}"><button type="button" class="rmphoto" title="Remove" data-arr="${prevId}" data-i="${idx}">✕</button><div class="fn">${Math.round((f.size||0)/1024)} KB</div>`; };
+      r.onload=e=>{ cell.innerHTML=`<img src="${e.target.result}"><button type="button" class="rmphoto" title="Remove" data-arr="${prevId}" data-i="${idx}">\u2715</button><div class="fn">${Math.round((f.size||0)/1024)} KB</div>`; };
       r.readAsDataURL(f);
+    }).catch(()=>{ /* keep the original file in the slot; still uploads */
+      const r=new FileReader();
+      try{ r.onload=e=>{ cell.innerHTML=`<img src="${e.target.result}"><button type="button" class="rmphoto" title="Remove" data-arr="${prevId}" data-i="${idx}">\u2715</button><div class="fn">photo</div>`; }; r.readAsDataURL(f0); }catch(e){ cell.innerHTML='<div class="fn">photo ready</div>'; }
     });
   });
 }
