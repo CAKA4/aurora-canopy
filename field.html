@@ -1102,12 +1102,18 @@ function dbhDerived(dbh){
   return { HEIGHT:Math.round((2.62+0.314*d)*100)/100, CROWNDIAM:Math.round((1.68+0.202*d)*100)/100, AGECLASS:Math.ceil(d/10)*10 };
 }
 function taxoLookup(common){
+  // Return only what's already cached — NEVER block the save on a live server fetch.
+  // (SPECIES2/FAMILY are derived niceties; a poor-signal fetch here must not stall the edit flow.)
   if(!common) return Promise.resolve({});
   const hit=taxoMap[String(common).toLowerCase()];
-  if(hit) return Promise.resolve(hit);
-  if(!taxoLayer) return Promise.resolve({});
+  return Promise.resolve(hit||{});
+}
+// Optional background lookup that fills SPECIES2/FAMILY when convenient (doesn't gate anything).
+function taxoLookupAsync(common){
+  if(!common || !taxoLayer) return Promise.resolve({});
+  const hit=taxoMap[String(common).toLowerCase()]; if(hit) return Promise.resolve(hit);
   return taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName = '"+String(common).replace(/'/g,"''")+"'", outFields:["Species","Family"], returnGeometry:false, num:1}))
-    .then(r=>{ if(!r.features.length) return {}; const a=r.features[0].attributes; return {SPECIES2:a.Species, FAMILY:a.Family}; })
+    .then(r=>{ if(!r.features.length) return {}; const a=r.features[0].attributes; const o={SPECIES2:a.Species, FAMILY:a.Family}; taxoMap[String(common).toLowerCase()]=o; return o; })
     .catch(()=>({}));
 }
 function computeGridXY(point){
