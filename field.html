@@ -1681,34 +1681,58 @@ function pickPhotoPreset(key){
     const idx={fast:0,balanced:1,detail:2}[key]; const btns=wrap.querySelectorAll('.hlp'); if(btns[idx]) btns[idx].classList.add('on'); }
   const hint=document.getElementById('photoPresetHint'); if(hint) hint.textContent=PHOTO_PRESETS[key].label;
 }
+function _blobToFile(blob, file){
+  if(!blob) return file;
+  const name=(file.name||'photo').replace(/\.(png|heic|heif|webp|tiff?)$/i,'.jpg');
+  try{ return new File([blob], /\.jpe?g$/i.test(name)?name:(name+'.jpg'), {type:'image/jpeg', lastModified:Date.now()}); }
+  catch(e){ try{ blob.name=name; }catch(_){}; return blob; }   // some Android WebViews lack the File constructor
+}
+function _encodeCanvas(cv, file, resolve){
+  if(cv.toBlob){ cv.toBlob(function(b){ resolve(_blobToFile(b,file)); }, 'image/jpeg', PHOTO_QUALITY); }
+  else { try{ const d=cv.toDataURL('image/jpeg', PHOTO_QUALITY); const bin=atob(d.split(',')[1]); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); resolve(_blobToFile(new Blob([u],{type:'image/jpeg'}),file)); }catch(e){ resolve(file); } }
+}
 function resizeImage(file){
   return new Promise(resolve=>{
     try{
       if(!file || !/^image\//.test(file.type||'')) return resolve(file);
-      const url=URL.createObjectURL(file);
-      const img=new Image();
-      img.onload=()=>{
-        try{
-          let {width:w, height:h}=img;
-          const long=Math.max(w,h);
-          if(long<=PHOTO_MAXEDGE){ URL.revokeObjectURL(url); return resolve(file); } // already small enough
+      // FAST PATH: createImageBitmap decodes off the main thread and downscales during decode —
+      // dramatically quicker than <img>+drawImage for large Android camera photos.
+      if(window.createImageBitmap){
+        createImageBitmap(file).then(function(bmp){
+          const long=Math.max(bmp.width, bmp.height);
+          if(long<=PHOTO_MAXEDGE){ try{bmp.close&&bmp.close();}catch(e){}; return resolve(file); }
           const scale=PHOTO_MAXEDGE/long;
-          w=Math.round(w*scale); h=Math.round(h*scale);
+          const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
           const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
-          cv.getContext('2d').drawImage(img,0,0,w,h);
-          URL.revokeObjectURL(url);
-          cv.toBlob(blob=>{
-            if(!blob) return resolve(file);
-            const name=(file.name||'photo').replace(/\.(png|heic|heif|webp|tiff?)$/i,'.jpg');
-            const out=new File([blob], /\.jpe?g$/i.test(name)?name:(name+'.jpg'), {type:'image/jpeg', lastModified:Date.now()});
-            resolve(out);
-          }, 'image/jpeg', PHOTO_QUALITY);
-        }catch(e){ URL.revokeObjectURL(url); resolve(file); }
-      };
-      img.onerror=()=>{ URL.revokeObjectURL(url); resolve(file); };
-      img.src=url;
+          cv.getContext('2d').drawImage(bmp,0,0,w,h);
+          try{bmp.close&&bmp.close();}catch(e){}
+          _encodeCanvas(cv, file, resolve);
+        }).catch(function(){ _resizeViaImg(file, resolve); });   // fall back if createImageBitmap fails (e.g. HEIC)
+        return;
+      }
+      _resizeViaImg(file, resolve);
     }catch(e){ resolve(file); }
   });
+}
+// fallback resize path (older browsers / formats createImageBitmap can't decode)
+function _resizeViaImg(file, resolve){
+  try{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=function(){
+      try{
+        let w=img.width, h=img.height; const long=Math.max(w,h);
+        if(long<=PHOTO_MAXEDGE){ URL.revokeObjectURL(url); return resolve(file); }
+        const scale=PHOTO_MAXEDGE/long; w=Math.round(w*scale); h=Math.round(h*scale);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        _encodeCanvas(cv, file, resolve);
+      }catch(e){ URL.revokeObjectURL(url); resolve(file); }
+    };
+    img.onerror=function(){ URL.revokeObjectURL(url); resolve(file); };
+    img.src=url;
+  }catch(e){ resolve(file); }
 }
 // shared multi-photo handler: resize each selected file, append to the target array, render thumbnails.
 // wrapId/prevId identify the DOM; getArr returns the backing array (photoFiles / newPhotoFiles / editPhotoFiles).
@@ -1806,19 +1830,10 @@ function submitInspection(){
     // remember this log for same-session correction detection
     noteSessionLog(gid, res.objectId, Object.assign({}, attrs, {[inspLayer.objectIdField]:res.objectId}));
     if(_photoAtSave && _photoAtSave.length){
-      // DIAGNOSTIC BUILD: attach the inspection photo and report exactly what happens, so we can see
-      // the real Android behaviour instead of guessing. Attaches to the inspection record (attachments
-      // are enabled there and this works on iPhone). Any error is shown in full.
-      const p0=_photoAtSave.filter(Boolean)[0];
-      toast('Photo: '+(p0?((p0.name||'img')+' '+Math.round((p0.size||0)/1024)+'KB'):'MISSING from array!'),'ok');
-      return addPhotoTo(inspLayer, res.objectId, p0)
-        .then(r=>{ toast('Photo attached OK (id '+(r&&r.attachmentId)+')','ok');
-          const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
-          if(treeOid!=null) return addPhotoTo(treeLayer, treeOid, p0).catch(()=>{});
-        })
-        .catch(err=>{ const m=(err&&(err.message||err.name))||String(err); toast('ATTACH FAILED: '+m,'err'); throw err; });
-    } else {
-      toast('No photo in array at save time','warn');
+      // attach every photo to BOTH the inspection record and the tree point (mirrors Field Maps)
+      const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
+      return addPhotosTo(inspLayer, res.objectId, _photoAtSave)
+        .then(()=> treeOid!=null ? addPhotosTo(treeLayer, treeOid, _photoAtSave).catch(()=>{}) : null);
     }
   }).then(()=>{
     if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
