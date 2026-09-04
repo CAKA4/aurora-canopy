@@ -757,6 +757,20 @@ function photoCreator(event){
         row.innerHTML='<div class="pop-log-hd"><span class="pl-act">'+esc(L.activity_type||'Activity')+'</span><span class="pl-meta">'+d+(L.inspector_name?(' · '+esc(L.inspector_name)):'')+' ▾</span></div>'+noteHtml+'<div class="pop-log-det"></div>';
         const det=row.querySelector('.pop-log-det');
         det.innerHTML=tbl([['Condition',L.condition_at_inspection],['Structural',L.Structdefe_at_inspection],['Wound/canker',L.Woundcank_at_inspection],['Dead/decay',L.Deaddecay_at_inspection],['Failure',L.Failpote_at_inspection],['Pest/disease',L.Pestdisease_at_inspection],['Impediment',L.Impediment_at_inspection],['DBH (cm)',L.DBH],['Species',L.Species],['Recommended',L.recommendations],['Removal reason',L.Removal_reason],['Notes',L.maintenance_notes]]);
+        // show this inspection's OWN photos (attached to the inspection record), dated by the log date
+        const linsOid=L[insp.objectIdField];
+        if(linsOid!=null){
+          const pWrap=document.createElement('div'); pWrap.className='pl-photos'; det.appendChild(pWrap);
+          insp.queryAttachments({objectIds:[linsOid]}).then(m=>{
+            const atts=((m&&m[linsOid])||[]).filter(x=>x.contentType&&x.contentType.indexOf('image')===0).sort((p,q)=>(q.id||0)-(p.id||0));
+            if(!atts.length) return;
+            pWrap.innerHTML='<div class="pop-h" style="margin-top:8px">Photo'+(atts.length>1?'s':'')+' · '+(d||'')+'</div>';
+            atts.forEach(x=>{ const holder=document.createElement('div'); holder.style.marginTop='6px'; holder.innerHTML='<div class="pop-muted">loading photo…</div>';
+              esriRequest(x.url,{responseType:"blob",authMode:"auto"}).then(r=>{ const u=URL.createObjectURL(r.data); holder.innerHTML='<a href="'+u+'" target="_blank" rel="noopener"><img src="'+u+'" style="width:100%;border-radius:8px;display:block"></a>'; }).catch(()=>{ holder.innerHTML='<div class="pop-muted">(photo unavailable)</div>'; });
+              pWrap.appendChild(holder);
+            });
+          }).catch(()=>{});
+        }
         row.querySelector('.pop-log-hd').addEventListener('click',()=>{ row.classList.toggle('open'); });
         logsBox.appendChild(row);
       });
@@ -764,16 +778,40 @@ function photoCreator(event){
   }
   function loadPhotos(){
     if(oid==null) return;
-    trees.queryAttachments({objectIds:[oid]}).then(m=>{
+    // request metadata so we can read each attachment's date when the service provides it
+    trees.queryAttachments({objectIds:[oid], returnMetadata:true}).then(m=>{
       const atts=(m&&m[oid])||[];
       const imgs=atts.filter(x=>x.contentType&&x.contentType.indexOf('image')===0).sort((p,q)=>(q.id||0)-(p.id||0));
       if(!imgs.length){ photoBox.innerHTML='<div class="pop-muted" style="margin-top:8px">No photos on this tree.</div>'; return; }
-      photoBox.innerHTML='<div class="pop-h">Photos</div>';
-      imgs.forEach(x=>{ const holder=document.createElement('div'); holder.style.marginTop='6px'; holder.innerHTML='<div class="pop-muted">loading photo…</div>';
-        esriRequest(x.url,{responseType:"blob",authMode:"auto"}).then(r=>{ const url=URL.createObjectURL(r.data); holder.innerHTML='<a href="'+url+'" target="_blank" rel="noopener"><img src="'+url+'" style="width:100%;border-radius:8px;display:block"></a>'; }).catch(()=>{ holder.innerHTML='<div class="pop-muted">(photo unavailable)</div>'; });
+      photoBox.innerHTML='<div class="pop-h">Photos ('+imgs.length+') · newest first</div>';
+      imgs.forEach((x,i)=>{ const holder=document.createElement('div'); holder.style.marginTop='8px'; holder.innerHTML='<div class="pop-muted">loading photo…</div>';
+        // derive a date: attachment 'date' if exposed, else EXIF date from metadata, else blank
+        let when='';
+        try{ if(x.date){ when=fmtD(x.date); } else if(x.exifInfo){ const dt=_exifDate(x.exifInfo); if(dt) when=fmtD(dt); } }catch(e){}
+        const cap = when ? ('<div class="pop-muted" style="margin-top:3px;font-size:11px">'+when+'</div>') : '';
+        esriRequest(x.url,{responseType:"blob",authMode:"auto"}).then(r=>{ const url=URL.createObjectURL(r.data); holder.innerHTML='<a href="'+url+'" target="_blank" rel="noopener"><img src="'+url+'" style="width:100%;border-radius:8px;display:block"></a>'+cap; }).catch(()=>{ holder.innerHTML='<div class="pop-muted">(photo unavailable)</div>'+cap; });
         photoBox.appendChild(holder);
       });
-    }).catch(()=>{});
+    }).catch(()=>{
+      // fallback: no metadata support — show photos without dates
+      trees.queryAttachments({objectIds:[oid]}).then(m=>{
+        const atts=(m&&m[oid])||[]; const imgs=atts.filter(x=>x.contentType&&x.contentType.indexOf('image')===0).sort((p,q)=>(q.id||0)-(p.id||0));
+        if(!imgs.length){ photoBox.innerHTML='<div class="pop-muted" style="margin-top:8px">No photos on this tree.</div>'; return; }
+        photoBox.innerHTML='<div class="pop-h">Photos</div>';
+        imgs.forEach(x=>{ const holder=document.createElement('div'); holder.style.marginTop='6px'; holder.innerHTML='<div class="pop-muted">loading photo…</div>';
+          esriRequest(x.url,{responseType:"blob",authMode:"auto"}).then(r=>{ const url=URL.createObjectURL(r.data); holder.innerHTML='<a href="'+url+'" target="_blank" rel="noopener"><img src="'+url+'" style="width:100%;border-radius:8px;display:block"></a>'; }).catch(()=>{ holder.innerHTML='<div class="pop-muted">(photo unavailable)</div>'; });
+          photoBox.appendChild(holder);
+        });
+      }).catch(()=>{});
+    });
+  }
+  // pull a usable date out of an attachment's EXIF metadata array, if present
+  function _exifDate(exif){
+    try{
+      if(!Array.isArray(exif)) return null;
+      for(const grp of exif){ const tags=(grp&&grp.tags)||[]; for(const t of tags){ const nm=(t.name||'').toLowerCase(); if(nm.indexOf('datetime')>=0 && t.value){ const s=String(t.value).replace(/^(\d{4}):(\d{2}):(\d{2})/,'$1-$2-$3'); const d=new Date(s); if(!isNaN(d)) return d.getTime(); } } }
+    }catch(e){}
+    return null;
   }
   return wrap;
 }
