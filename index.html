@@ -125,14 +125,17 @@ input[type=date]{color-scheme:light}
 .card .cap{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
 .bars{display:flex;flex-direction:column;gap:9px}
 .bar{display:grid;grid-template-columns:135px 1fr 44px;align-items:center;gap:10px;font-size:13px}
-.bar.click{cursor:pointer}.bar.click:hover .lab{color:#fff}
+.bar.click{cursor:pointer;border-radius:8px;transition:background .12s}
+.bar.click:hover{background:rgba(44,122,84,.10)}
+.bar.click:hover .lab{color:var(--brand);font-weight:700}
+.bar.click:hover .val{color:var(--text)}
 .bar .lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bar .track{height:14px;background:var(--panel2);border-radius:7px;overflow:hidden}
 .bar .fill{height:100%;border-radius:7px;transition:width .8s cubic-bezier(.3,.9,.3,1)}
 .bar .val{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
 .bar.wide{grid-template-columns:108px 1fr 96px}
 .concern{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}
-.concern:last-child{border-bottom:none}.concern:hover{background:rgba(255,255,255,.02)}
+.concern:last-child{border-bottom:none}.concern:hover{background:rgba(44,122,84,.08)}
 .concern .sp{width:5px;height:26px;border-radius:3px;flex:none}
 .concern .who{flex:1;min-width:0}
 .concern .who .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -756,7 +759,7 @@ function photoCreator(event){
         const noteHtml=note?'<div class="pl-note">'+esc(note)+'</div>':'';
         row.innerHTML='<div class="pop-log-hd"><span class="pl-act">'+esc(L.activity_type||'Activity')+'</span><span class="pl-meta">'+d+(L.inspector_name?(' · '+esc(L.inspector_name)):'')+' ▾</span></div>'+noteHtml+'<div class="pop-log-det"></div>';
         const det=row.querySelector('.pop-log-det');
-        det.innerHTML=tbl([['Condition',L.condition_at_inspection],['Structural',L.Structdefe_at_inspection],['Wound/canker',L.Woundcank_at_inspection],['Dead/decay',L.Deaddecay_at_inspection],['Failure',L.Failpote_at_inspection],['Pest/disease',L.Pestdisease_at_inspection],['Impediment',L.Impediment_at_inspection],['DBH (cm)',L.DBH],['Species',L.Species],['Recommended',L.recommendations],['Removal reason',L.Removal_reason],['Notes',L.maintenance_notes]]);
+        det.innerHTML=tbl([['Species',L.Species],['DBH (cm)',L.DBH],['Condition',L.condition_at_inspection],['Structural',L.Structdefe_at_inspection],['Wound/canker',L.Woundcank_at_inspection],['Dead/decay',L.Deaddecay_at_inspection],['Failure',L.Failpote_at_inspection],['Pest/disease',L.Pestdisease_at_inspection],['Impediment',L.Impediment_at_inspection],['Recommended',L.recommendations],['Removal reason',L.Removal_reason],['Notes',L.maintenance_notes]]);
         // show this inspection's OWN photos (attached to the inspection record), dated by the log date
         const linsOid=L[insp.objectIdField];
         if(linsOid!=null){
