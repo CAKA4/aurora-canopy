@@ -663,9 +663,12 @@ function confirmDialog(title,msg,yesLabel,onYes){
 }
 function cfNo(){ document.getElementById('confirmWrap').classList.remove('show'); cfCallback=null; }
 /* load & show attachments for a feature */
+// remember the layer + container so a delete can refresh the same view
+const _attachCtx={};
 function showAttachments(layer, oid, containerId, label){
   const box=document.getElementById(containerId); if(!box)return;
   if(!layer||oid==null){box.innerHTML='';return;}
+  _attachCtx[containerId]={layer:layer, oid:oid, label:label};
   layer.queryAttachments({objectIds:[oid]}).then(mapp=>{
     const atts=(mapp&&mapp[oid])||[];
     if(!atts.length){box.innerHTML='';return;}
@@ -673,19 +676,33 @@ function showAttachments(layer, oid, containerId, label){
     const g=document.getElementById(containerId+'_g');
     atts.forEach(a=>{
       const cell=document.createElement('div'); cell.className='thumb';
+      // delete button on every attachment
+      const del='<button type="button" class="rmphoto" title="Delete photo" onclick="deleteAttachment(\''+containerId+'\','+a.id+')">\u2715</button>';
       if(a.contentType&&a.contentType.indexOf('image')===0){
-        cell.innerHTML='<div class="file">…</div>';
+        cell.innerHTML='<div class="file">\u2026</div>'+del;
         // fetch through the SDK so the auth token is handled correctly, then show as a blob
         esriRequest(a.url,{responseType:"blob",authMode:"auto"}).then(r=>{
           const u=URL.createObjectURL(r.data);
-          cell.innerHTML=`<a href="${u}" target="_blank"><img src="${u}"></a>`;
-        }).catch(()=>{ cell.innerHTML='<div class="file">photo</div>'; });
+          cell.innerHTML='<a href="'+u+'" target="_blank"><img src="'+u+'"></a>'+del;
+        }).catch(()=>{ cell.innerHTML='<div class="file">photo</div>'+del; });
       } else {
-        cell.innerHTML=`<div class="file">${esc(a.name||'file')}</div>`;
+        cell.innerHTML='<div class="file">'+esc(a.name||'file')+'</div>'+del;
       }
       g.appendChild(cell);
     });
   }).catch(()=>{box.innerHTML='';});
+}
+// delete a single saved attachment (with confirm), then refresh that photo grid
+function deleteAttachment(containerId, attachmentId){
+  const ctx=_attachCtx[containerId]; if(!ctx) return;
+  confirmDialog('Delete this photo?','This permanently removes the photo. This cannot be undone.','Delete photo',()=>{
+    const feature=new GraphicC({attributes:{[ctx.layer.objectIdField]:ctx.oid}});
+    ctx.layer.deleteAttachments(feature,[attachmentId]).then(r=>{
+      const res=r&&r[0]; if(res&&res.error) throw res.error;
+      toast('Photo deleted','ok');
+      showAttachments(ctx.layer, ctx.oid, containerId, ctx.label);   // refresh the grid
+    }).catch(err=>toast('Delete failed: '+((err&&err.message)||err),'err'));
+  });
 }
 const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const val=v=>(v==null||v===''||v==='None')?'—':v;
@@ -1254,12 +1271,20 @@ function viewInsp(idx){
 }
 function deleteInsp(idx){
   const i=histCache[idx]; if(!i)return;
-  confirmDialog('Delete this log?','This permanently removes this activity-log record. This cannot be undone.','Delete log',()=>{
+  confirmDialog('Delete this log?','This permanently removes this activity-log record and its photos. This cannot be undone.','Delete log',()=>{
     const oid=i[inspLayer.objectIdField];
-    inspLayer.applyEdits({deleteFeatures:[{objectId:oid}]}).then(r=>{
+    const feature=new GraphicC({attributes:{[inspLayer.objectIdField]:oid}});
+    // delete this log's own photos first (in case the service does not cascade), then the record
+    inspLayer.queryAttachments({objectIds:[oid]}).then(mapp=>{
+      const atts=(mapp&&mapp[oid])||[];
+      const ids=atts.map(a=>a.id);
+      return ids.length ? inspLayer.deleteAttachments(feature, ids).catch(()=>{}) : null;
+    }).catch(()=>{}).then(()=>{
+      return inspLayer.applyEdits({deleteFeatures:[{objectId:oid}]});
+    }).then(r=>{
       if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
-      toast('Log deleted','ok'); openTree(selectedGraphic);
-    }).catch(err=>toast('Delete failed: '+(err.message||err),'err'));
+      toast('Log and its photos deleted','ok'); openTree(selectedGraphic);
+    }).catch(err=>toast('Delete failed: '+((err&&err.message)||err),'err'));
   });
 }
 function editInsp(idx){
@@ -1580,10 +1605,11 @@ function saveNewTree(){
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     clearProvisional(); if(addMode)toggleAdd(); treeLayer.refresh(); bumpDay('add');
     const _np=newPhotoFiles.slice(); window._newTreeOid=res.objectId;
-    const attach = _np.length ? addPhotosTo(treeLayer, res.objectId, _np).catch(()=>{}) : Promise.resolve();
-    return attach.then(()=> treeLayer.queryFeatures({objectIds:[res.objectId], outFields:["*"]}));
-  }).then(q=>{
-    const ng=q.features[0]; treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
+    // Open the inspection form NOW using the data we already have — don't wait for the photo upload
+    // or an extra re-query. The photo uploads in the background.
+    if(_np.length) addPhotosTo(treeLayer, res.objectId, _np).catch(()=>{});
+    treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
+    const ng={attributes:Object.assign({}, g.attributes, {[treeLayer.objectIdField]:res.objectId}), geometry:g.geometry};
     toast('Tree created — log its first activity','ok'); openInspection(ng,'Inspection');
   }).catch(err=>{
     if(btn){btn.disabled=false; btn.textContent='Create tree';}
@@ -1827,18 +1853,19 @@ function submitInspection(){
   inspLayer.applyEdits({addFeatures:[feature]}).then(r=>{
     const res=r.addFeatureResults[0]; if(res.error) throw res.error;
     bumpDay('log');
-    // remember this log for same-session correction detection
     noteSessionLog(gid, res.objectId, Object.assign({}, attrs, {[inspLayer.objectIdField]:res.objectId}));
-    if(_photoAtSave && _photoAtSave.length){
-      // attach every photo to BOTH the inspection record and the tree point (mirrors Field Maps)
-      const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
-      return addPhotosTo(inspLayer, res.objectId, _photoAtSave)
-        .then(()=> treeOid!=null ? addPhotosTo(treeLayer, treeOid, _photoAtSave).catch(()=>{}) : null);
-    }
-  }).then(()=>{
-    if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
-      treeLayer.applyEdits({updateFeatures:[g]}).then(()=>treeLayer.refresh());}
+    // Close the form NOW — the record is saved. Photo upload + tree-condition update finish in the
+    // background, IN PARALLEL, so the user isn't kept waiting. (Previously these ran sequentially AND
+    // the same photo was uploaded twice — to the log and to the tree — doubling the transfer time.)
     toast('Log saved','ok'); closeSheet();
+    const jobs=[];
+    if(_photoAtSave && _photoAtSave.length){
+      jobs.push(addPhotosTo(inspLayer, res.objectId, _photoAtSave).catch(()=>{}));   // photo ONCE, on the log
+    }
+    if(attrs.condition_at_inspection){ g.attributes.OVERHEAL=attrs.condition_at_inspection;
+      jobs.push(treeLayer.applyEdits({updateFeatures:[g]}).then(()=>treeLayer.refresh()).catch(()=>{})); }
+    return Promise.all(jobs);
+  }).then(()=>{
   }).catch(err=>{
     Buffer.add({layer:'insp', attributes:attrs, photos:photoFiles.slice(), treeOid:(g&&g.attributes?g.attributes[treeLayer.objectIdField]:null)}).then(()=>{Buffer.count().then(updateQueueBadge);toast('Save buffered — will retry','warn');closeSheet();});
   });
