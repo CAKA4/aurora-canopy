@@ -2520,9 +2520,9 @@ function buildTreeReportHTML(a, lon, lat, photo, logs, createF, editF, nPhotos){
   let logsHtml='<p class="muted">No inspection logs recorded.</p>';
   let anySys=false;
   if(logs.length){ logs=logs.slice().sort(function(x,y){ return dnum(y)-dnum(x); });
-    logsHtml='<table class="lt"><thead><tr><th>Date</th><th>Activity</th><th>Inspector</th><th>Condition</th><th>DBH</th><th>Recommended</th><th>Notes</th></tr></thead><tbody>'+
+    logsHtml='<table class="lt"><thead><tr><th>Date</th><th>Activity</th><th>Species</th><th>Inspector</th><th>Condition</th><th>DBH</th><th>Recommended</th><th>Notes</th></tr></thead><tbody>'+
     logs.map(L=>{ const d=logD(L); if(d.sys)anySys=true;
-      return '<tr><td>'+fmtD(d.v)+(d.sys?'<span title="recorded by the system">\u2020</span>':'')+'</td><td>'+E(L.activity_type)+'</td><td>'+E(L.inspector_name)+'</td><td>'+E(L.condition_at_inspection)+'</td><td>'+E(L.DBH==null?'':L.DBH)+'</td><td>'+E(L.recommendations)+'</td><td>'+E(L.maintenance_notes)+'</td></tr>'; }).join('')+'</tbody></table>';
+      return '<tr><td>'+fmtD(d.v)+(d.sys?'<span title="recorded by the system">\u2020</span>':'')+'</td><td>'+E(L.activity_type)+'</td><td>'+E(L.Species)+'</td><td>'+E(L.inspector_name)+'</td><td>'+E(L.condition_at_inspection)+'</td><td>'+E(L.DBH==null?'':L.DBH)+'</td><td>'+E(L.recommendations)+'</td><td>'+E(L.maintenance_notes)+'</td></tr>'; }).join('')+'</tbody></table>';
     if(anySys) logsHtml+='<div class="fine">\u2020 Showing the date the log was created.</div>'; }
   const mm=miniMapURL(lon,lat);
   const photoHtml=photo?('<img class="ph" src="'+photo+'">'+((nPhotos>1)?'<div class="fine">Most recent of '+nPhotos+' photos on this tree.</div>':'')):'<div class="noph">No photo on this tree</div>';
