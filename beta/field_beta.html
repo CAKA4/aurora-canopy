@@ -1952,8 +1952,8 @@ async function syncJob(job){
       const g=new GraphicC({attributes:p.attributes});
       const r=await inspLayer.applyEdits({addFeatures:[g]});
       const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+      // photo ONCE, on the inspection record (no duplicate mirror to the tree — halves the upload)
       await uploadPhotos(inspLayer, res.objectId, p.photos);
-      if(p.treeOid!=null) await uploadPhotos(treeLayer, p.treeOid, p.photos).catch(()=>{});
       bumpDay('log');
       return true;
     }
