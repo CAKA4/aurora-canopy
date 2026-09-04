@@ -1806,10 +1806,19 @@ function submitInspection(){
     // remember this log for same-session correction detection
     noteSessionLog(gid, res.objectId, Object.assign({}, attrs, {[inspLayer.objectIdField]:res.objectId}));
     if(_photoAtSave && _photoAtSave.length){
-      // attach every photo to BOTH the inspection record and the tree point (mirrors Field Maps)
-      const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
-      return addPhotosTo(inspLayer, res.objectId, _photoAtSave)
-        .then(()=> treeOid!=null ? addPhotosTo(treeLayer, treeOid, _photoAtSave).catch(()=>{}) : null);
+      // DIAGNOSTIC BUILD: attach the inspection photo and report exactly what happens, so we can see
+      // the real Android behaviour instead of guessing. Attaches to the inspection record (attachments
+      // are enabled there and this works on iPhone). Any error is shown in full.
+      const p0=_photoAtSave.filter(Boolean)[0];
+      toast('Photo: '+(p0?((p0.name||'img')+' '+Math.round((p0.size||0)/1024)+'KB'):'MISSING from array!'),'ok');
+      return addPhotoTo(inspLayer, res.objectId, p0)
+        .then(r=>{ toast('Photo attached OK (id '+(r&&r.attachmentId)+')','ok');
+          const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
+          if(treeOid!=null) return addPhotoTo(treeLayer, treeOid, p0).catch(()=>{});
+        })
+        .catch(err=>{ const m=(err&&(err.message||err.name))||String(err); toast('ATTACH FAILED: '+m,'err'); throw err; });
+    } else {
+      toast('No photo in array at save time','warn');
     }
   }).then(()=>{
     if(attrs.condition_at_inspection){g.attributes.OVERHEAL=attrs.condition_at_inspection;
