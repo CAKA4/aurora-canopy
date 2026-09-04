@@ -1830,18 +1830,21 @@ function _photoFormData(file){
 // attach many photos (array, may contain nulls from removed thumbnails) to one feature, in sequence
 function addPhotosTo(layer, oid, files){
   const list=(files||[]).filter(Boolean);
-  return list.reduce((chain,f)=>chain.then(()=>addPhotoTo(layer,oid,f).catch(()=>{})), Promise.resolve());
+  let firstErr=null;
+  return list.reduce((chain,f)=>chain.then(()=>addPhotoTo(layer,oid,f).catch(e=>{ if(!firstErr) firstErr=e; })), Promise.resolve())
+    .then(()=>{ if(firstErr && typeof toast==='function'){ const m=(firstErr&&(firstErr.message||firstErr.name))||String(firstErr); toast('Photo not saved: '+m,'err'); } });
 }
 function addPhotoTo(layer, oid, file){
   if(!layer||oid==null||!file) return Promise.resolve();
   const feature=new GraphicC({attributes:{[layer.objectIdField]:oid}});
-  const elForm=_photoFormEl(file);
-  const input=elForm.querySelector('input');
-  const inputOk = input && input.files && input.files.length>0;   // iOS: populated · Android: empty
-  const attempt = inputOk
-    ? layer.addAttachment(feature, elForm).then(r=>{ if(r&&r.error) throw r.error; return r; })
-    : Promise.reject(new Error('input.files unset'));
-  return attempt.catch(()=> layer.addAttachment(feature, _photoFormData(file)).then(r=>{ if(r&&r.error) throw r.error; return r; }));
+  const okr=r=>{ if(r&&r.error) throw r.error; return r; };
+  // FormData FIRST — the most reliable path on Android (no DataTransfer, no File constructor needed).
+  // Fall back to the populated <form> element only if FormData is rejected (some iOS/ArcGIS combos).
+  return layer.addAttachment(feature, _photoFormData(file)).then(okr)
+    .catch(function(){
+      const elForm=_photoFormEl(file);
+      return layer.addAttachment(feature, elForm).then(okr);
+    });
 }
 // inspection-record attachment (kept for existing callers)
 function addPhoto(oid, file){ return addPhotoTo(inspLayer, oid, file); }
