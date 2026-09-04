@@ -724,6 +724,17 @@ const val=v=>(v==null||v===''||v==='None')?'—':v;
 const dval=v=>(v==null||v==='')?'—':v;   // preserves 'None' for domains where it is a real value (e.g. Impediment)
 const _HC_LC=(function(){const m={};Object.keys(HEALTH_COLOR).forEach(k=>{m[k.toLowerCase()]=HEALTH_COLOR[k];});return m;})();
 const healthColor=h=>{ if(h==null)return '#7A868E'; return HEALTH_COLOR[h] || _HC_LC[String(h).trim().toLowerCase()] || '#7A868E'; };
+// local markers for trees created/queued offline (so they show on the map before they sync)
+const _localMarkers={};   // GlobalID -> Graphic
+function addLocalTreeMarker(gid, geometry, attrs){
+  if(!gid||!geometry||!view) return;
+  try{
+    const sym={type:"simple-marker", color:healthColor(attrs&&attrs.OVERHEAL), size:9, outline:{color:"#fff", width:1.4}};
+    const gr=new GraphicC({geometry:geometry, attributes:Object.assign({__local:true}, attrs||{}), symbol:sym});
+    _localMarkers[gid]=gr; view.graphics.add(gr);
+  }catch(e){}
+}
+function removeLocalTreeMarker(gid){ const gr=_localMarkers[gid]; if(gr){ try{ view.graphics.remove(gr); }catch(e){} delete _localMarkers[gid]; } }
 const attr=(g,k)=>g.attributes[k];
 function today(){return new Date().toISOString().slice(0,10);}
 function fmtDate(v){if(v==null||v==='')return '—';const d=new Date(v);return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10);}
@@ -1603,6 +1614,7 @@ function saveNewTree(){
   const photos=photosToRecords(newPhotoFiles.slice());
   const geom=(provisional&&provisional.geometry)?provisional.geometry.clone?provisional.geometry.clone():provisional.geometry:null;
   queueJob('tree-add', {attributes:g.attributes, geometry:geom, photos:photos}).then(()=>{
+    addLocalTreeMarker(gid, geom, g.attributes);   // show the new tree on the map immediately
     clearProvisional(); if(addMode)toggleAdd();
     if(btn){btn.disabled=false; btn.textContent='Create tree';}
     toast('Tree saved on device — log its first activity','ok');
@@ -1933,7 +1945,11 @@ async function syncJob(job){
   try{
     if(job.kind==='tree-add'){
       const localGid = p.attributes && p.attributes.GlobalID;
-      const g=new GraphicC({geometry:p.geometry, attributes:p.attributes});
+      // Do NOT send our client GlobalID — most services reject a supplied GlobalID on insert (this is
+      // why offline-created trees got stuck in the queue). Strip it; the server assigns its own, which
+      // we read back below and use to remap the queued log's foreign key.
+      const sendAttrs=Object.assign({}, p.attributes); delete sendAttrs.GlobalID;
+      const g=new GraphicC({geometry:p.geometry, attributes:sendAttrs});
       const r=await treeLayer.applyEdits({addFeatures:[g]});
       const res=r.addFeatureResults[0]; if(res.error) throw res.error;
       // the server may have assigned a NEW GlobalID (client-supplied ones are often ignored) — read it
@@ -1942,6 +1958,7 @@ async function syncJob(job){
       if(!serverGid){ try{ const q=await treeLayer.queryFeatures({objectIds:[res.objectId], outFields:['GlobalID'], returnGeometry:false}); if(q.features.length) serverGid=q.features[0].attributes.GlobalID; }catch(e){} }
       if(serverGid && localGid && serverGid!==localGid){ await remapQueuedFk(localGid, serverGid); }
       await uploadPhotos(treeLayer, res.objectId, p.photos);
+      try{ if(localGid) removeLocalTreeMarker(localGid); }catch(e){}
       bumpDay('add'); treeLayer.refresh();
       return true;
     }
