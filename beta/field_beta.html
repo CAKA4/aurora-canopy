@@ -384,6 +384,7 @@ pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;
   <button class="tbtn" id="btnLayers" onclick="openLayers()">LAYERS<small>on/off</small></button>
   <button class="tbtn" id="btnFlag" onclick="openHighlight()">FLAG<small id="flagLbl">pre-2023</small></button>
   <button class="tbtn" id="btnDash" onclick="openDashboard()">DASH<small>today</small></button>
+  <button class="tbtn" id="btnPreload" onclick="preloadArea()">AREA<small id="preloadLbl">load</small></button>
   <button class="tbtn" id="btnRec" onclick="openRecords()">SYNC<small id="syncLbl">idle</small></button>
 </div>
 <div id="layersOverlay" class="pick" onclick="if(event.target===this)layersClose()">
@@ -577,7 +578,7 @@ require([
     const renderer=new UniqueValueRenderer({valueExpression:normExpr,defaultSymbol:sym("#7A868E"),defaultLabel:"Other"});
     Object.keys(HEALTH_COLOR).forEach(v=>renderer.addUniqueValueInfo({value:v,symbol:sym(HEALTH_COLOR[v])}));
 
-    treeLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["*"], renderer, minScale:15000, maxScale:0});
+    treeLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["*"], renderer, minScale:15000, maxScale:0, refreshInterval:0});
     inspLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.inspTableId, outFields:["*"]});
 
     const B=CONFIG.parcelBase;
@@ -1210,6 +1211,7 @@ let toastT;function toast(m,k){const el=document.getElementById('toast');const c
 /* ------------- TREE detail ------------- */
 function openTree(g){
   if(addMode)toggleAdd();
+  if(g.attributes&&g.attributes.GlobalID&&_preloadCache[g.attributes.GlobalID]){ g.attributes=Object.assign({}, _preloadCache[g.attributes.GlobalID], g.attributes); }
   if(g.attributes&&g.attributes.GlobalID&&_pendingEdits[g.attributes.GlobalID]){ g.attributes=Object.assign({}, g.attributes, _pendingEdits[g.attributes.GlobalID]); }
   selectedGraphic=g; const a=g.attributes; const gid=a.GlobalID;
   const color=healthColor(a.OVERHEAL);
@@ -1930,9 +1932,15 @@ async function syncJob(job){
   const p=job.payload||{};
   try{
     if(job.kind==='tree-add'){
+      const localGid = p.attributes && p.attributes.GlobalID;
       const g=new GraphicC({geometry:p.geometry, attributes:p.attributes});
       const r=await treeLayer.applyEdits({addFeatures:[g]});
       const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+      // the server may have assigned a NEW GlobalID (client-supplied ones are often ignored) — read it
+      // back and remap any queued child jobs (logs) that referenced our local GlobalID.
+      let serverGid=res.globalId||null;
+      if(!serverGid){ try{ const q=await treeLayer.queryFeatures({objectIds:[res.objectId], outFields:['GlobalID'], returnGeometry:false}); if(q.features.length) serverGid=q.features[0].attributes.GlobalID; }catch(e){} }
+      if(serverGid && localGid && serverGid!==localGid){ await remapQueuedFk(localGid, serverGid); }
       await uploadPhotos(treeLayer, res.objectId, p.photos);
       bumpDay('add'); treeLayer.refresh();
       return true;
@@ -1960,6 +1968,20 @@ async function syncJob(job){
   }catch(e){ return false; }
   return false;
 }
+// rewrite queued logs whose foreign key pointed at an offline tree's LOCAL GlobalID so they now
+// point at the SERVER's real GlobalID (fixes "log stuck in queue" after an offline new tree syncs).
+async function remapQueuedFk(oldGid, newGid){
+  try{
+    const items=await Buffer.all();
+    for(const job of items){
+      const pl=job.payload||{};
+      let changed=false;
+      if(job.kind==='log' && pl.attributes && pl.attributes[CONFIG.fkField]===oldGid){ pl.attributes[CONFIG.fkField]=newGid; changed=true; }
+      if((job.kind==='tree-edit'||job.kind==='log') && pl.attributes && pl.attributes.GlobalID===oldGid){ pl.attributes.GlobalID=newGid; changed=true; }
+      if(changed){ job.payload=pl; await Buffer.put(job); }
+    }
+  }catch(e){}
+}
 async function uploadPhotos(layer, oid, photos){
   const list=(photos||[]).filter(Boolean);
   for(const ph of list){
@@ -1974,8 +1996,14 @@ function flushQueue(){
     if(!items.length){ _flushing=false; updateQueueBadge(0); return; }
     const off=document.getElementById('offline'); if(off) off.classList.remove('show');
     const s=document.getElementById('syncLbl'); if(s) s.textContent='syncing…';
+    // Parent trees (tree-add) must sync BEFORE their child logs so the log's foreign key can be
+    // remapped to the server's real GlobalID. Order: tree-add, then tree-edit, then log.
+    const order={'tree-add':0,'tree-edit':1,'log':2};
+    items.sort((a,b)=>(order[a.kind]==null?9:order[a.kind])-(order[b.kind]==null?9:order[b.kind]) || (a.id-b.id));
     let synced=0;
-    for(const job of items){
+    for(const q of items){
+      // re-read this job fresh — a prior tree-add in this same flush may have remapped its foreign key
+      let job=q; try{ const cur=(await Buffer.all()).find(x=>x.id===q.id); if(cur) job=cur; else continue; }catch(e){}
       const ok=await syncJob(job);
       if(ok){ await Buffer.remove(job.id); synced++; try{ const gg=job.payload&&job.payload.attributes&&job.payload.attributes.GlobalID; if(gg) clearPendingEdit(gg); }catch(e){} }
       else { job.tries=(job.tries||0)+1; try{ await Buffer.put(job); }catch(e){} }
@@ -2033,6 +2061,24 @@ function openHighlight(){
     <div class="frow"><div class="field"><label>From</label><input type="date" id="hlFrom"></div><div class="field"><label>To</label><input type="date" id="hlTo"></div></div>
     <div class="actions"><button class="btn ghost" onclick="closeSheet()">Close</button><button class="btn brand" onclick="applyHighlightCustom()">Apply range</button></div>`;
   openSheet();
+}
+// Pre-load every tree in (and around) the current view into device memory, so the map and tap-to-open
+// work even in a dead zone. Do this while you still have signal, before working the low-signal stretch.
+let _preloadCache={};
+function preloadArea(){
+  const lbl=document.getElementById('preloadLbl');
+  if(!view||!treeLayer){ return; }
+  if(lbl) lbl.textContent='loading…';
+  const btn=document.getElementById('btnPreload'); if(btn) btn.classList.add('on');
+  const ext=(view.extent&&view.extent.clone)?view.extent.clone().expand(1.6):view.extent;
+  treeLayer.queryFeatures({geometry:ext, spatialRelationship:'intersects', outFields:['*'], returnGeometry:true, num:5000})
+    .then(res=>{
+      res.features.forEach(f=>{ const gid=f.attributes&&f.attributes.GlobalID; if(gid) _preloadCache[gid]=f.attributes; });
+      const n=res.features.length;
+      if(lbl) lbl.textContent=n+' ready';
+      toast(n+' trees loaded for this area — collection will work here even without signal','ok');
+    })
+    .catch(err=>{ if(lbl) lbl.textContent='retry'; if(btn) btn.classList.remove('on'); toast('Could not load area (need signal to load): '+((err&&err.message)||err),'warn'); });
 }
 function openDashboard(){
   if(addMode)toggleAdd(); selectedGraphic=null;
