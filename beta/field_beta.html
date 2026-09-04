@@ -1,0 +1,2145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Town of Aurora — Tree Inventory Field (BETA)</title>
+<!-- BUILD: beta-offline-v1 (save-first offline for add/edit/log) -->
+<link rel="stylesheet" href="https://js.arcgis.com/4.30/esri/themes/dark/main.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0F151A; --panel:#18212A; --panel2:#1F2B35; --line:#2C3A46;
+  --text:#EAF1F4; --muted:#93A2AD; --white:#FFFFFF; --form:#141D24;
+  --brand:#2C7A54; --brand-d:#215E41; --amber:#FFB100; --amber-d:#D89600;
+  --good:#3FA45B; --sat:#7CB342; --pot:#E0B400; --dec:#E8862B; --dead:#D0402B; --gone:#7A868E;
+  --field:#FFDD54; --field-edge:#E6B800;
+  --r:14px; --sheet-max:560px;
+  --sans:'Barlow Semi Condensed',system-ui,-apple-system,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0}
+body{font-family:var(--sans);background:var(--ink);color:var(--text);overflow:hidden;overscroll-behavior:none}
+#map{position:absolute;inset:0;background:#0b0f13}
+.leaflet-container{background:#0b0f13;font-family:var(--sans)}
+
+/* ---- top instrument bar ---- */
+#top{position:absolute;z-index:1000;top:0;left:0;right:0;display:flex;align-items:center;gap:10px;
+  padding:calc(env(safe-area-inset-top) + 8px) 12px 8px;pointer-events:none}
+#brand{pointer-events:auto;background:rgba(15,21,26,.86);backdrop-filter:blur(8px);border:1px solid var(--line);
+  border-radius:12px;padding:7px 12px;display:flex;align-items:center;gap:9px;min-width:0}
+#brand .mark{width:22px;height:22px;flex:none;border-radius:6px;background:
+  linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center}
+#brand .mark svg{width:14px;height:14px;display:block}
+.wm{color:#fff;font-weight:700}
+.iq{color:#5FD08A;font-weight:800}
+.tld{color:var(--muted);font-weight:600;font-size:.72em}
+#brand h1{font-size:15px;font-weight:700;letter-spacing:.02em;margin:0;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+#brand h1 span{color:var(--muted);font-weight:500}
+#readout{pointer-events:auto;margin-left:auto;background:rgba(15,21,26,.86);backdrop-filter:blur(8px);
+  border:1px solid var(--line);border-radius:12px;padding:6px 10px;font-family:var(--mono);font-size:11px;
+  display:flex;gap:12px;color:var(--muted)}
+#readout b{color:var(--text);font-weight:600}
+#readout .warn b{color:var(--amber)}
+@media(max-width:520px){#brand h1 span{display:none}#brand h1{font-size:13px;max-width:150px}#readout{font-size:10px;gap:8px;padding:6px 8px}}
+
+/* ---- basemap + net toggles ---- */
+#tools{position:absolute;z-index:1000;right:12px;top:calc(env(safe-area-inset-top) + 56px);
+  display:flex;flex-direction:column;gap:8px}
+.tbtn{pointer-events:auto;width:44px;height:44px;border-radius:12px;border:1px solid var(--line);
+  background:rgba(15,21,26,.86);backdrop-filter:blur(8px);color:var(--text);font-family:var(--mono);
+  font-size:10px;font-weight:600;display:grid;place-items:center;cursor:pointer;line-height:1.1;text-align:center}
+.tbtn:active{transform:scale(.94)}
+.tbtn.on{border-color:var(--amber);color:var(--amber)}
+.hlpicks{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 4px}
+.hlp{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:inherit;font-weight:600;font-size:13px;padding:8px 12px;border-radius:9px;cursor:pointer}
+.hlp.on{background:var(--amber);border-color:var(--amber);color:#20160a}
+.tbtn small{display:block;font-size:8px;color:var(--muted);font-weight:500}
+
+/* ---- floating actions ---- */
+#fabs{position:absolute;z-index:1000;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 16px);
+  display:flex;justify-content:space-between;padding:0 14px;pointer-events:none}
+.fab{pointer-events:auto;border:none;border-radius:14px;font-family:var(--sans);font-weight:700;font-size:15px;
+  letter-spacing:.01em;padding:0 18px;height:52px;display:flex;align-items:center;gap:9px;cursor:pointer;
+  box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.fab svg{width:20px;height:20px}
+.fab.add{background:var(--brand);color:#fff}
+.fab.add.arming{background:var(--amber);color:#20160a}
+.fab.loc{background:var(--panel);color:var(--text);border:1px solid var(--line);width:52px;padding:0;justify-content:center}
+.fab.loc.following{color:#3FA45B;border-color:#3FA45B}
+.fab:active{transform:translateY(1px)}
+
+/* arming banner */
+#arm{position:absolute;z-index:1000;left:50%;transform:translateX(-50%);
+  bottom:calc(env(safe-area-inset-bottom) + 80px);background:var(--amber);color:#20160a;
+  font-weight:600;font-size:13px;padding:8px 10px 8px 14px;border-radius:20px;display:none;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap;align-items:center;gap:10px}
+#arm.show{display:flex}
+#armGps,#armCenter{background:#20160a;color:var(--amber);border:none;font-family:inherit;font-weight:700;font-size:12.5px;padding:6px 11px;border-radius:14px;cursor:pointer}
+#xhair{position:absolute;z-index:998;left:50%;top:50%;transform:translate(-50%,-50%);width:42px;height:42px;
+  border:2px solid rgba(255,221,84,.95);border-radius:50%;pointer-events:none;display:none;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 0 1px rgba(0,0,0,.35)}
+#xhair.show{display:block}
+#xhair::marker{}
+#xhair .dot{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;background:rgba(255,221,84,1);border:1px solid rgba(0,0,0,.6);border-radius:50%}
+#xhair::before,#xhair::after{content:"";position:absolute;background:rgba(255,221,84,.95);box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+#xhair::before{left:50%;top:-11px;bottom:-11px;width:2px;transform:translateX(-50%)}
+#xhair::after{top:50%;left:-11px;right:-11px;height:2px;transform:translateY(-50%)}
+
+/* ---- bottom sheet ---- */
+#scrim{position:absolute;inset:0;z-index:1500;background:rgba(6,9,12,.5);opacity:0;pointer-events:none;transition:opacity .2s}
+#scrim.show{opacity:1;pointer-events:auto}
+/* ---- light form panel for outdoor readability (map/tools stay dark) ---- */
+#sheet, #picker, #confirmWrap .box, #identity .idcard{
+  --panel:#F4F6F8; --panel2:#E7ECF0; --line:#C4CED6; --text:#12202B; --muted:#4A5A67; --form:#FFFFFF;
+}
+#sheet .sheet-head .eyebrow, #sheet .slabel, #sheet .attr .k, #sheet .field label{ color:#3A4A57; }
+#sheet .attr .v, #sheet .sheet-head h2{ color:#12202B; }
+#sheet .locked{ background:#EEF2F5; color:#12202B; }
+#sheet .treenote{ background:#EAF0F4; color:#33424E; }
+#sheet .note{ background:#EAF0F4; color:#33424E; }
+#sheet .insp{ background:#EDF1F4; }
+#sheet .empty{ color:#4A5A67; }
+#picker .pickbox{ background:#F4F6F8; }
+#picker .pickitem{ color:#12202B; border-bottom-color:#D4DCE2; }
+#picker .pickitem.cur{ background:rgba(44,122,84,.14); }
+#picker #pickTitle{ color:#4A5A67; }
+#sheet{position:absolute;z-index:1600;left:0;right:0;bottom:0;margin:0 auto;max-width:var(--sheet-max);
+  background:var(--panel);border-radius:20px 20px 0 0;border:1px solid var(--line);border-bottom:none;
+  transform:translateY(102%);transition:transform .26s cubic-bezier(.4,.9,.3,1);
+  max-height:90vh;display:flex;flex-direction:column;box-shadow:0 -10px 40px rgba(0,0,0,.5)}
+#sheet.up{transform:translateY(0)}
+.sheet-grip{padding:9px 0 3px;display:flex;justify-content:center;flex:none}
+.sheet-grip i{width:38px;height:4px;border-radius:3px;background:var(--line)}
+.sheet-head{flex:none;display:flex;align-items:flex-start;gap:12px;padding:2px 18px 12px;border-bottom:1px solid var(--line)}
+.sheet-head .spine{width:5px;align-self:stretch;border-radius:3px;background:var(--gone);flex:none;min-height:34px}
+.sheet-head .htxt{min-width:0;flex:1}
+.sheet-head .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.sheet-head h2{margin:2px 0 0;font-size:20px;font-weight:700;line-height:1.1;overflow-wrap:anywhere}
+.sheet-head .sub{font-size:13px;color:var(--muted);margin-top:2px}
+.sheet-close{flex:none;width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);
+  color:var(--muted);font-size:18px;cursor:pointer;line-height:1}
+.sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 18px calc(env(safe-area-inset-bottom) + 18px)}
+
+/* status chip */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:20px;
+  background:var(--panel2);border:1px solid var(--line)}
+.chip .dot{width:9px;height:9px;border-radius:50%;background:var(--gone)}
+
+/* attribute grid */
+.attrs{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px;margin:14px 0 4px}
+.attrs .full{grid-column:1/-1}
+.attr .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.attr .v{font-size:15px;font-weight:500;margin-top:1px;overflow-wrap:anywhere}
+.gid{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-all}
+
+/* section label */
+.slabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+  margin:20px 0 8px;display:flex;align-items:center;gap:8px}
+.slabel::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* inspection history rows */
+.insp{display:flex;gap:10px;padding:10px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--panel2)}
+.insp .spine{width:4px;border-radius:2px;background:var(--gone);flex:none}
+.insp .body{min-width:0;flex:1}
+.insp .row1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.insp .act{font-weight:700;font-size:14px}
+.insp .date{font-family:var(--mono);font-size:11px;color:var(--muted);flex:none}
+.insp .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+.insp .pill{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:5px;margin-left:6px}
+.insp .pill.queued{background:rgba(255,177,0,.16);color:var(--amber)}
+.insp .pill.synced{background:rgba(63,164,91,.16);color:var(--good)}
+.empty{color:var(--muted);font-size:13.5px;padding:12px;text-align:center;border:1px dashed var(--line);border-radius:12px}
+
+/* form */
+.field{margin-bottom:13px}
+.field.hide{display:none}
+.hide{display:none}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin-bottom:5px;letter-spacing:.01em}
+.field label .req{color:var(--amber)}
+.field input,.field select,.field textarea{width:100%;background:var(--field);border:1px solid var(--field-edge);
+  border-radius:11px;color:#0E0E0E;font-family:var(--sans);font-size:16px;font-weight:500;padding:12px 12px;appearance:none}
+.field input::placeholder,.field textarea::placeholder{color:#6b5d15}
+/* a field the user has modified turns pink, so edited attributes are easy to spot */
+.field input.changed,.field textarea.changed{background:#FBB6CE;border-color:#E86FA0}
+.field input.changed::placeholder,.field textarea.changed::placeholder{color:#8a3a5c}
+/* selects use background-color (not the 'background' shorthand) so the dropdown arrow image is preserved */
+.field select.changed{background-color:#FBB6CE;border-color:#E86FA0}
+.field textarea{min-height:74px;resize:vertical;line-height:1.4}
+.field select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:#fff;box-shadow:0 0 0 3px rgba(255,215,64,.5)}
+.field input.pickfield{cursor:pointer;padding-right:34px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%230E0E0E' stroke-width='1.8' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center}
+/* custom searchable picker (reliable on iOS, unlike datalist) */
+#picker{position:fixed;inset:0;z-index:3000;background:rgba(6,9,12,.55);display:none;flex-direction:column;justify-content:flex-start}
+.pick{position:fixed;inset:0;z-index:3000;background:rgba(6,9,12,.55);display:none;flex-direction:column;justify-content:flex-end}
+.pick.show{display:flex}
+.lyrline{display:flex;align-items:center;gap:11px;font-size:15px;color:var(--text);padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.lyrline:last-child{border-bottom:none}
+.lyrline input{width:20px;height:20px;margin:0}
+#picker.show{display:flex}
+.pickbox{background:var(--panel,#18212A);border-bottom-left-radius:18px;border-bottom-right-radius:18px;height:calc(var(--vvh, 88vh) - 8px);max-height:calc(var(--vvh, 88vh) - 8px);display:flex;flex-direction:column;box-shadow:0 8px 30px rgba(0,0,0,.5);padding-top:env(safe-area-inset-top)}
+.pickhead{flex:none;display:flex;align-items:center;gap:10px;padding:14px 14px 10px}
+.pickhead #pickTitle{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);flex:1}
+.pickhead .done{background:var(--brand);color:#fff;border:none;border-radius:10px;font-family:inherit;font-weight:700;font-size:14px;padding:8px 15px;cursor:pointer}
+.picksearchwrap{flex:none;padding:0 14px 10px}
+#pickSearch{width:100%;background:var(--field);border:1px solid var(--field-edge);border-radius:11px;color:#0E0E0E;font-family:var(--sans);font-size:16px;font-weight:500;padding:12px}
+#pickList{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 8px 16px}
+.pickitem{padding:14px 14px;border-radius:10px;font-size:16px;color:var(--text);cursor:pointer;border-bottom:1px solid var(--line)}
+.pickitem:active{background:var(--panel2)}
+.pickitem.add{color:var(--amber);font-weight:600}
+.pickitem.cur{background:rgba(255,215,64,.14)}
+.pickempty{padding:20px 14px;color:var(--muted);font-size:14px;text-align:center}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hint{font-size:11.5px;color:var(--muted);margin-top:4px}
+.locked{width:100%;min-height:46px;background:var(--form);border:1px solid var(--line);border-radius:11px;
+  color:var(--text);font-size:15px;font-weight:500;padding:12px 36px 12px 12px;display:flex;align-items:center;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none'><rect x='5' y='11' width='14' height='9' rx='2' stroke='%2393A2AD' stroke-width='2'/><path d='M8 11V8a4 4 0 0 1 8 0v3' stroke='%2393A2AD' stroke-width='2'/></svg>");
+  background-repeat:no-repeat;background-position:right 12px center}
+.treenote{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:10px;
+  padding:10px 12px;font-size:12.5px;color:var(--muted);line-height:1.45;margin-bottom:14px}
+.treenote b{color:var(--text);font-weight:600}
+.bar{display:grid;grid-template-columns:110px 1fr 34px;align-items:center;gap:10px;font-size:13px;margin-bottom:8px}
+.bar .lab{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.bar .track{height:14px;background:var(--panel2);border-radius:7px;overflow:hidden}
+.bar .fill{height:100%;border-radius:7px;transition:width .7s cubic-bezier(.3,.9,.3,1)}
+.bar .vv{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+
+/* photo */
+.photo{border:1px dashed var(--line);border-radius:12px;padding:14px;text-align:center;background:var(--form);cursor:pointer}
+.photo input{display:none}
+.photo .ic{width:26px;height:26px;margin:0 auto 6px;color:var(--muted)}
+.photo.has{border-style:solid;border-color:var(--brand);padding:8px}
+.photo img{max-height:130px;border-radius:8px;display:block;margin:0 auto}
+.photo .fn{font-size:12px;color:var(--good);margin-top:6px;font-weight:600}
+.photogrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+.photocell{position:relative;background:var(--panel);border-radius:8px;overflow:hidden;min-height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.photocell img{width:100%;height:88px;object-fit:cover;border-radius:8px;display:block;margin:0}
+.photocell .fn{font-size:10px;margin:2px 0 4px}
+.rmphoto{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.photolabel-multi{font-size:11px;color:var(--muted);margin-top:6px}
+.liblink{text-align:center;font-size:12.5px;color:var(--brand);margin-top:8px;cursor:pointer;text-decoration:underline}
+.photobtn>input[type=file]{display:none}
+.photobtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;
+  background:#1E6FD0;border:2px solid #1A62B8;border-radius:14px;color:#fff;padding:16px 12px;cursor:pointer;margin:2px 0 6px}
+.photobtn:active{transform:translateY(1px)}
+.photobtn.has{background:#155CB0}
+.photobtn svg{width:30px;height:30px}
+.photobtn .big{font-size:18px;font-weight:700;letter-spacing:.01em}
+.photobtn .sm{font-size:12px;opacity:.9;font-weight:500}
+.photoblock{margin-bottom:6px}
+.photoblock .liblink{color:#1E6FD0}
+.field .fieldlbl{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:.02em}
+.clearbtn{background:none;border:1px solid var(--line);color:var(--muted);font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;cursor:pointer}
+.prevbtn{background:none;border:1px solid var(--brand);color:var(--brand);font-family:inherit;font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;cursor:pointer;white-space:nowrap;flex:none}
+
+/* buttons */
+.actions{display:flex;gap:10px;margin-top:18px;position:sticky;bottom:0;background:linear-gradient(to top,var(--panel) 78%,transparent);padding:12px 0 4px}
+.btn{flex:1;border:none;border-radius:12px;font-family:var(--sans);font-weight:700;font-size:15.5px;padding:14px;cursor:pointer}
+.btn.primary{background:var(--amber);color:#20160a}
+.btn.brand{background:var(--brand);color:#fff}
+.btn.danger{background:rgba(208,64,43,.14);color:var(--dead);border:1px solid rgba(208,64,43,.4)}
+.btn.ghost{flex:0 0 auto;background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:14px 18px}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.5}
+
+.twobtn{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+.bigact{border:none;border-radius:14px;padding:15px 12px;font-family:var(--sans);font-weight:700;font-size:15px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px}
+.bigact svg{width:22px;height:22px}
+.bigact.log{background:var(--amber);color:#20160a}
+.bigact.edit{background:rgba(208,64,43,.16);color:var(--dead);border:1px solid rgba(208,64,43,.4)}
+/* attachment thumbnails */
+.att{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--form);margin-top:6px}
+.att .grid{display:flex;flex-wrap:wrap;gap:8px}
+.att .thumb{width:80px;height:80px;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:var(--panel2)}
+.att .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.att .thumb .file{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:9px;padding:4px;text-align:center;word-break:break-all}
+/* custom confirm dialog */
+#confirmWrap{position:absolute;inset:0;z-index:5000;background:rgba(6,9,12,.7);display:none;align-items:center;justify-content:center;padding:24px}
+#confirmWrap.show{display:flex}
+#confirmWrap .box{max-width:340px;width:100%;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;text-align:center}
+#confirmWrap .box h3{margin:0 0 8px;font-size:18px}
+#confirmWrap .box p{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.5}
+#confirmWrap .box .row{display:flex;gap:10px}
+#confirmWrap .box button{flex:1;border:none;border-radius:11px;font-family:var(--sans);font-weight:700;font-size:15px;padding:13px;cursor:pointer}
+#confirmWrap .box .no{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+#confirmWrap .box .yes{background:var(--dead);color:#fff}
+.bigact:active{transform:translateY(1px)}
+
+/* records / export panel */
+.kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.kv .n{font-family:var(--mono);font-weight:600}
+pre.code{background:var(--form);border:1px solid var(--line);border-radius:11px;padding:12px;overflow-x:auto;
+  font-family:var(--mono);font-size:11.5px;line-height:1.5;color:#bcd;margin:8px 0}
+.note{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:10px;
+  padding:11px 13px;font-size:13px;color:var(--muted);line-height:1.5;margin-top:10px}
+.note b{color:var(--text)}
+
+/* toast */
+#toast{position:absolute;z-index:2000;left:50%;transform:translateX(-50%) translateY(20px);
+  bottom:calc(env(safe-area-inset-bottom) + 20px);background:var(--panel2);border:1px solid var(--line);
+  color:var(--text);padding:11px 16px;border-radius:12px;font-size:13.5px;font-weight:500;opacity:0;
+  transition:all .25s;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:88%;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast .tdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle}
+
+/* leaflet marker */
+.tmark{border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.tmark.sel{box-shadow:0 0 0 3px var(--amber),0 1px 4px rgba(0,0,0,.5)}
+.provisional{filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.leaflet-bar a{background:var(--panel);color:var(--text);border-color:var(--line)}
+.leaflet-bar a:hover{background:var(--panel2)}
+
+
+/* ---- live-backend additions ---- */
+#gate{position:absolute;inset:0;z-index:3000;background:radial-gradient(1000px 500px at 70% -10%,rgba(44,122,84,.18),transparent),var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center}
+#gate .mk{width:56px;height:56px;border-radius:15px;background:linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center}
+#gate .mk svg{width:34px;height:34px}
+#gate h1{font-size:26px;margin:6px 0 0}
+#gate p{color:var(--muted);font-size:14px;max-width:320px;margin:0;line-height:1.5}
+#gate button{margin-top:6px;background:var(--brand);color:#fff;border:none;border-radius:13px;font-family:var(--sans);
+  font-weight:700;font-size:16px;padding:15px 28px;cursor:pointer}
+#gate button:active{transform:translateY(1px)}
+#gate .err{color:var(--dead);font-size:13px;max-width:340px}
+#gate.hidden{display:none}
+#userChip{font-family:var(--mono);font-size:10.5px;font-weight:600;color:#20160a;background:var(--field);padding:3px 8px;border-radius:20px;margin-left:2px;white-space:nowrap;flex:none;overflow:hidden;text-overflow:ellipsis}
+#identity{position:absolute;inset:0;z-index:4000;background:radial-gradient(900px 480px at 70% -10%,rgba(44,122,84,.18),transparent),rgba(9,13,17,.97);display:flex;align-items:center;justify-content:center;padding:24px}
+#identity.hidden{display:none}
+#identity .idcard{max-width:360px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
+#identity .idmk{width:54px;height:54px;border-radius:15px;background:linear-gradient(135deg,var(--good),var(--brand));display:grid;place-items:center}
+#identity .idmk svg{width:30px;height:30px}
+#identity h2{font-size:23px;margin:4px 0 0}
+#identity p{color:var(--muted);font-size:13.5px;margin:0;line-height:1.5;max-width:300px}
+#identity .idquick{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px}
+#identity .idquick button{background:var(--panel2);border:1px solid var(--line);color:var(--text);font-family:var(--sans);font-weight:700;font-size:15px;padding:12px 18px;border-radius:12px;cursor:pointer;min-width:64px}
+#identity .idquick button.sel{background:var(--field);color:#20160a;border-color:var(--field-edge)}
+#identity input{width:100%;background:var(--field);border:1px solid var(--field-edge);border-radius:12px;color:#0E0E0E;font-family:var(--sans);font-weight:500;font-size:16px;padding:13px 14px;text-align:center}
+#identity input::placeholder{color:#6b5d15}
+#identity #idStart{width:100%;background:var(--brand);color:#fff;border:none;border-radius:13px;font-family:var(--sans);font-weight:700;font-size:16px;padding:15px;cursor:pointer;margin-top:2px}
+#offline{position:absolute;z-index:1200;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top) + 52px);
+  background:var(--amber);color:#20160a;font-weight:600;font-size:12px;padding:5px 12px;border-radius:16px;display:none;
+  box-shadow:0 3px 12px rgba(0,0,0,.3)}
+#offline.show{display:block}
+#boot{position:absolute;inset:0;z-index:2500;background:var(--ink);display:flex;align-items:center;justify-content:center;color:var(--muted);font-family:var(--mono);font-size:13px}
+#boot.hidden{display:none}
+.esri-view .esri-attribution{font-size:9px}
+</style>
+</head>
+<body>
+
+<!-- sign-in gate -->
+<div id="gate" class="hidden">
+  
+  <h1>Town of Aurora <span style="color:var(--muted);font-weight:600">— Tree Inventory Field</span></h1>
+  <p>Sign in with your ArcGIS account to load the tree inventory and log inspections.</p>
+  <button id="signInBtn">Sign in with ArcGIS</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<div id="boot">Connecting to ArcGIS…</div>
+<div id="map"></div>
+<div id="offline">Offline — edits are being saved on this device</div>
+
+<div id="top">
+  <div id="brand" onclick="showIdentity()" title="Change inspector">
+    
+    <h1>Aurora Tree Inventory <span>· Field</span></h1>
+    <span id="userChip">—</span>
+  </div>
+  <div id="readout" onclick="openDashboard()" style="cursor:pointer">
+    <span>ADD <b id="rAdded">0</b></span>
+    <span>EDIT <b id="rEdited">0</b></span>
+    <span>LOG <b id="rLogged">0</b></span>
+    <span class="warn">QUEUE <b id="rQueue">0</b></span>
+  </div>
+</div>
+
+<div id="identity" class="hidden">
+  <div class="idcard">
+    <div class="idmk"><svg viewBox="0 0 24 24" fill="none"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM5 20a7 7 0 0 1 14 0" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+    <h2>Who's logging today?</h2>
+    <p>Your name is stamped on every tree log you record this session.</p>
+    <div class="idquick" id="idQuick"></div>
+    <input id="idName" placeholder="or type your name / initials" autocomplete="off">
+    <button id="idStart" onclick="commitIdentity()">Start logging</button>
+  </div>
+</div>
+
+<div id="confirmWrap">
+  <div class="box">
+    <h3 id="cfTitle">Are you sure?</h3>
+    <p id="cfMsg"></p>
+    <div class="row"><button class="no" onclick="cfNo()">Cancel</button><button class="yes" id="cfYes">Delete</button></div>
+  </div>
+</div>
+
+<div id="tools">
+  <button class="tbtn on" id="btnBase" onclick="cycleBase()">SAT<small id="baseLbl">imagery</small></button>
+  <button class="tbtn" id="btnLayers" onclick="openLayers()">LAYERS<small>on/off</small></button>
+  <button class="tbtn" id="btnFlag" onclick="openHighlight()">FLAG<small id="flagLbl">pre-2023</small></button>
+  <button class="tbtn" id="btnDash" onclick="openDashboard()">DASH<small>today</small></button>
+  <button class="tbtn" id="btnRec" onclick="openRecords()">SYNC<small id="syncLbl">idle</small></button>
+</div>
+<div id="layersOverlay" class="pick" onclick="if(event.target===this)layersClose()">
+  <div class="pickbox" style="padding:16px 18px 20px">
+    <div class="pickhead" style="padding:0 0 10px"><span id="pickTitle">Map layers</span><button class="done" onclick="layersClose()">Done</button></div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Turn off layers you don't need to keep the map light and fast, especially on older phones.</div>
+    <label class="lyrline"><input type="checkbox" id="fParcels" checked onchange="toggleFieldLayer('parcels',this.checked)"> Parcels (property lines)</label>
+    <label class="lyrline"><input type="checkbox" id="fRoads" checked onchange="toggleFieldLayer('roads',this.checked)"> Road names</label>
+    <label class="lyrline"><input type="checkbox" id="fGrid" checked onchange="toggleFieldLayer('grid',this.checked)"> Map grid</label>
+  </div>
+</div>
+
+<div id="xhair"><span class="dot"></span></div>
+<div id="picker">
+  <div class="pickbox">
+    <div class="pickhead"><span id="pickTitle">Choose</span><button class="done" onclick="pickCommit()">✓ Done</button></div>
+    <div class="picksearchwrap"><input id="pickSearch" placeholder="Search or type…" oninput="renderPickList()" onkeydown="pickKey(event)" autocomplete="off" autocorrect="off" autocapitalize="none"></div>
+    <div id="pickList"></div>
+  </div>
+</div>
+<div id="arm"><span id="armLbl">Pan map to aim</span><button id="armCenter" onclick="confirmPlacement()">✛ Place here</button><button id="armMove" style="display:none" onclick="confirmMove()">✓ Move here</button></div>
+
+<div id="fabs">
+  <button class="fab add" id="fabAdd" onclick="toggleAdd()">
+    <svg viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <span id="addLbl">Add tree</span>
+  </button>
+  <button class="fab loc following" id="fabLoc" onclick="locate()" title="Use my location">
+    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.4" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
+</div>
+
+<div id="scrim" onclick="closeSheet()"></div>
+<div id="sheet">
+  <div class="sheet-grip" onclick="closeSheet()"><i></i></div>
+  <div class="sheet-head">
+    <div class="spine" id="shSpine"></div>
+    <div class="htxt"><div class="eyebrow" id="shEyebrow">TREE</div><h2 id="shTitle">—</h2><div class="sub" id="shSub"></div></div>
+    <button class="sheet-close" onclick="closeSheet()">✕</button>
+  </div>
+  <div class="sheet-body" id="shBody"></div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://js.arcgis.com/4.30/"></script>
+<script>
+/* ============================================================
+   CONFIG  —  fill these four values after you publish the
+   hosted feature service and register the OAuth app.
+   ============================================================ */
+const CONFIG = {
+  portalUrl:  "https://auroraarboretum.maps.arcgis.com",
+  appId:      "l7DVQSsMbBTIGasu",
+  serviceUrl: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Aurora_Tree_Inventory_Final/FeatureServer",
+  treeLayerId: 0,        // layer index of the tree points (AuroraTrees)
+  inspTableId: 1,        // table index (Aurora_Tree_Inspections)
+  fkField:    "tree_fk2", // inspection field that points at the tree GlobalID
+  // --- overlay layers ---
+  parcelBase: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Parcel/FeatureServer",
+  parcelLayerId: 0, parcelAddressField: "LOCATION",
+  roadsUrl: "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Roads/FeatureServer/0",
+  roadsLabelField: "FULL_NAME",
+  gridUrl:  "https://services6.arcgis.com/pp0U8bdXTe3mxW0U/arcgis/rest/services/Map_grid/FeatureServer/0",
+  gridLabelField: "PageNumber",
+  // Parks / open space polygons — the tree's park name is stamped from this when a tree is added
+  parksUrl: "https://services2.arcgis.com/1IylZvXQw11Lg0Zm/arcgis/rest/services/AuroraBasemap/FeatureServer/10",   // Aurora Parks and Open Space Lots
+  parkNameField: "Label_Name",
+  parkTargetField: "PARKNAM",
+  // nearest road supplies the street name on a new tree
+  streetNameField: "FULL_NAME",
+  streetTargetField: "STREET",
+  streetMaxDist: 60,            // metres: ignore roads further than this
+  distTargetField: "DISTANCE",  // tree field that stores metres to the nearest road
+  // --- "older tree" halo: yellow dot behind trees dated before 2023 ---
+  oldTreeWhere: "DATE_NEW < DATE '2023-01-01'",
+  // York Region 2024 orthoimagery (same imagery Field Maps uses)
+  yorkImageryUrl: "https://ww2.yorkmaps.ca/arcgis/rest/services/CacheMaps/YR_Imagery2024/MapServer",
+  // taxonomy lookup table (COMMON -> Species / Family)
+  taxonomyItemId: "72a9256564e54bd7b5915110b9a3cedf",
+  utmWkid: 26917  // NAD83 / UTM zone 17N (Aurora, ON)
+};
+
+/* domain coded-values (labels for dropdowns). Kept local so the form
+   renders instantly; these mirror the layer's domains. */
+const DOMAINS = {"activity_type": {"Inspection": "Inspection", "Pruned": "Pruned", "Cabled": "Cabled", "Removed": "Removed", "Planted": "Planted", "Fertilized": "Fertilized", "Mulched": "Mulched", "Injected": "Injected"}, "Removal_reason": {"Disease": "Disease", "Storm damage": "Storm damage", "Construction": "Construction", "Insect - pest damage": "Insect - pest damage", "Vehicle impact": "Vehicle impact", "Other": "Other"}, "inspector_name": {"KC": "KC", "HS": "HS", "CG": "CG"}, "COMMON": {"Code": "Label", "Accolade Elm": "Accolade Elm", "Alberta Spruce": "Alberta Spruce", "Alder sp.": "Alder sp.", "Alexandrina Magnolia": "Alexandrina Magnolia", "Algonquin Pillar Swiss Stone Pine": "Algonquin Pillar Swiss Stone Pine", "Almond Leaf Willow": "Almond Leaf Willow", "American Basswood": "American Basswood", "American Beech": "American Beech", "American Chestnut Chinese Hybrid": "American Chestnut Chinese Hybrid", "American Elderberry": "American Elderberry", "American Elm": "American Elm", "American Elm 'Princeton'": "American Elm 'Princeton'", "American Hazelnut": "American Hazelnut", "American Hornbeam": "American Hornbeam", "American Linden": "American Linden", "American Plum": "American Plum", "American Sycamore": "American Sycamore", "American Wild Plum": "American Wild Plum", "Americana Willow": "Americana Willow", "Amur Corktree": "Amur Corktree", "Amur Honeysuckle": "Amur Honeysuckle", "Amur Maple": "Amur Maple", "Apple sp.": "Apple sp.", "Aristocrat Ornamental Pear": "Aristocrat Ornamental Pear", "Armstrong Red Maple": "Armstrong Red Maple", "Arnold Sentinel Austrian Pine": "Arnold Sentinel Austrian Pine", "Arroyo Willow": "Arroyo Willow", "Ash sp.": "Ash sp.", "Aurea American Elderberry": "Aurea American Elderberry", "Austrian Pine": "Austrian Pine", "Autumn Blaze Freeman Maple": "Autumn Blaze Freeman Maple", "Autumn Blaze Maple": "Autumn Blaze Maple", "Autumn Blaze Norway Maple": "Autumn Blaze Norway Maple", "Autumn Fantasy Freeman Maple": "Autumn Fantasy Freeman Maple", "Baby\u2019s Breath Spirea": "Baby\u2019s Breath Spirea", "Balkan Maple": "Balkan Maple", "Balsam Fir": "Balsam Fir", "Balsam Poplar": "Balsam Poplar", "Barberry": "Barberry", "Basswood": "Basswood", "Beaked Hazelnut": "Beaked Hazelnut", "Beauty Bush": "Beauty Bush", "Beech sp.": "Beech sp.", "Belgian Red Willow": "Belgian Red Willow", "Bench": "Bench", "Betty Saucer Magnolia": "Betty Saucer Magnolia", "Bigtooth Maple": "Bigtooth Maple", "Bing Cherry": "Bing Cherry", "Birch": "Birch", "Bitternut Hickory": "Bitternut Hickory", "Black Alder": "Black Alder", "Black Ash": "Black Ash", "Black Cedar": "Black Cedar", "Black Cherry": "Black Cherry", "Black Chokecherry": "Black Chokecherry", "Black Gum": "Black Gum", "Black Lace Elderberry": "Black Lace Elderberry", "Black Locust": "Black Locust", "Black Locust Purple Robe": "Black Locust Purple Robe", "Black Maple": "Black Maple", "Black Mulberry": "Black Mulberry", "Black Pussy Willow": "Black Pussy Willow", "Black Spruce": "Black Spruce", "Black Walnut": "Black Walnut", "Blackice Plum": "Blackice Plum", "Blue Ash": "Blue Ash", "Blue Beech": "Blue Beech", "Blue Spruce": "Blue Spruce", "Blue Spruce, var \u201choopsii\u201d": "Blue Spruce, var \u201choopsii\u201d", "Bottlebrush Buckeye": "Bottlebrush Buckeye", "Bowhall Maple": "Bowhall Maple", "Bowhall Red Maple": "Bowhall Red Maple", "Bradford Ornamental Pear": "Bradford Ornamental Pear", "Bradford Pear": "Bradford Pear", "Brandywine Crabapple": "Brandywine Crabapple", "Brandywine Maple": "Brandywine Maple", "Brandywine Red Maple": "Brandywine Red Maple", "Briotti Red Horse Chestnut": "Briotti Red Horse Chestnut", "Buckthorn": "Buckthorn", "Buffalo Berry": "Buffalo Berry", "Bur Oak": "Bur Oak", "Bur Oak - Foundation Tree": "Bur Oak - Foundation Tree", "Bur Oak Stump Carving": "Bur Oak Stump Carving", "Burgundy Crabapple": "Burgundy Crabapple", "Butterfly Magnolia": "Butterfly Magnolia", "Butternut": "Butternut", "Butternut Hickory": "Butternut Hickory", "Canada Plum": "Canada Plum", "Capital Ornamental Pear": "Capital Ornamental Pear", "Cardinal Red Mountain Ash": "Cardinal Red Mountain Ash", "Cardinal Royal Mountain Ash": "Cardinal Royal Mountain Ash", "Carpathian Walnut": "Carpathian Walnut", "Caspian Honey Locust": "Caspian Honey Locust", "Celebration Maple": "Celebration Maple", "Chantecleer Pear": "Chantecleer Pear", "Chanticleer Pear": "Chanticleer Pear", "Cherry Birch": "Cherry Birch", "Cherry Plum": "Cherry Plum", "Cherry sp.": "Cherry sp.", "Chess-apple Whitebeam": "Chess-apple Whitebeam", "Chess-apple, Whitebeam": "Chess-apple, Whitebeam", "Chinese Catalpa": "Chinese Catalpa", "Chinese Elm": "Chinese Elm", "Chinese Mountain Ash": "Chinese Mountain Ash", "Chinese Paper Birch": "Chinese Paper Birch", "Chinese Pear": "Chinese Pear", "Chinese Wingnut": "Chinese Wingnut", "Chinkapin Oak": "Chinkapin Oak", "Chinquapin Oak": "Chinquapin Oak", "Choke Cherry": "Choke Cherry", "Cinquefoil Crabapple": "Cinquefoil Crabapple", "Cockspur Hawthorn": "Cockspur Hawthorn", "Columnar Crabapple": "Columnar Crabapple", "Columnar Dark Leaved Beech": "Columnar Dark Leaved Beech", "Columnar Elm": "Columnar Elm", "Columnar English Oak": "Columnar English Oak", "Columnar Norway Maple": "Columnar Norway Maple", "Columnar Ornamental Pear": "Columnar Ornamental Pear", "Columnar Regal Prince Oak": "Columnar Regal Prince Oak", "Columnar Tulip Tree": "Columnar Tulip Tree", "Columnar White Cedar": "Columnar White Cedar", "Columnar White Oak": "Columnar White Oak", "Common Buttonbush": "Common Buttonbush", "Common Lilac": "Common Lilac", "Common Witch Hazel": "Common Witch Hazel", "Concolor Fir": "Concolor Fir", "Copper Beech": "Copper Beech", "Copper Curls Lilac": "Copper Curls Lilac", "Coral Bark Willow": "Coral Bark Willow", "Corkscrew Mulberry": "Corkscrew Mulberry", "Corkscrew Willow": "Corkscrew Willow", "Cornelian Cherry Dogwood": "Cornelian Cherry Dogwood", "Corylus Santiam": "Corylus Santiam", "Cotoneaster": "Cotoneaster", "Crabapple": "Crabapple", "Crimean Linden": "Crimean Linden", "Crimson Cloud Hawthorn": "Crimson Cloud Hawthorn", "Crimson King Norway Maple": "Crimson King Norway Maple", "Crimson Sunset Maple": "Crimson Sunset Maple", "Cucumber Magnolia": "Cucumber Magnolia", "Cucumber Tree": "Cucumber Tree", "Cully Birch": "Cully Birch", "Cut-leaf Crabapple": "Cut-leaf Crabapple", "Dappled Dawn Lilac": "Dappled Dawn Lilac", "Dappled Willow": "Dappled Willow", "Dark Crabapple": "Dark Crabapple", "Dark Leaved Willow": "Dark Leaved Willow", "Dasyados Willow": "Dasyados Willow", "David's Maple": "David's Maple", "Dawn Redwood": "Dawn Redwood", "Dawyck Beech": "Dawyck Beech", "Dawyck Copper Beech": "Dawyck Copper Beech", "Dawyck Golden Beech": "Dawyck Golden Beech", "Dawyck Purple Beech": "Dawyck Purple Beech", "Dawyck Purple Columnar Beech": "Dawyck Purple Columnar Beech", "Dicks Green Willow": "Dicks Green Willow", "Dieckii Maple": "Dieckii Maple", "Dogwood": "Dogwood", "Dolgo Crabapple": "Dolgo Crabapple", "Dolgo Flowering Crabapple": "Dolgo Flowering Crabapple", "Donald Wyman Crabapple": "Donald Wyman Crabapple", "Douglas Fir": "Douglas Fir", "Drummond Red Maple": "Drummond Red Maple", "Dwarf Apple - Frostbite": "Dwarf Apple - Frostbite", "Dwarf European Pear - Magness": "Dwarf European Pear - Magness", "Dwarf Honeysuckle": "Dwarf Honeysuckle", "Dwarf Mnt Ash": "Dwarf Mnt Ash", "Dwarf Mountain Ash": "Dwarf Mountain Ash", "Dwarf Purple Willow": "Dwarf Purple Willow", "Eastern Cottonwood": "Eastern Cottonwood", "Eastern Hemlock": "Eastern Hemlock", "Eastern Red Cedar": "Eastern Red Cedar", "Eastern Redbud": "Eastern Redbud", "Eastern Wahoo Euonymus": "Eastern Wahoo Euonymus", "Eastern White Cedar": "Eastern White Cedar", "Echtermeyer Weeping Crabapple": "Echtermeyer Weeping Crabapple", "Edwin Hillier Scotts Pine": "Edwin Hillier Scotts Pine", "Elderberry": "Elderberry", "Elizabeth Magnolia": "Elizabeth Magnolia", "Elm sp.": "Elm sp.", "Emerald Queen Norway Maple": "Emerald Queen Norway Maple", "Emerald Sunshine Elm": "Emerald Sunshine Elm", "Emerald White Cedar": "Emerald White Cedar", "Encore Magnolia": "Encore Magnolia", "English Elm": "English Elm", "English Oak": "English Oak", "English Privet": "English Privet", "English Walnut": "English Walnut", "English White Oak": "English White Oak", "Erman Birch": "Erman Birch", "Eskimo Sunset Sycamore Maple": "Eskimo Sunset Sycamore Maple", "Euchlora Linden": "Euchlora Linden", "Euonymous Standard": "Euonymous Standard", "Euonymus": "Euonymus", "Euonymus Hamiltonianus": "Euonymus Hamiltonianus", "Euonymus Sarcoxie": "Euonymus Sarcoxie", "European Beech": "European Beech", "European Bird Cherry": "European Bird Cherry", "European Black Alder": "European Black Alder", "European Buckthorn": "European Buckthorn", "European Juneberry": "European Juneberry", "European Larch": "European Larch", "European Linden": "European Linden", "European Mountain Ash": "European Mountain Ash", "European Nettle Tree": "European Nettle Tree", "European Pear - Rescue": "European Pear - Rescue", "European Plum - Bluebyrd": "European Plum - Bluebyrd", "European Spindle Tree": "European Spindle Tree", "Euyonomous": "Euyonomous", "Fairview Maple": "Fairview Maple", "Fastigiata White Pine": "Fastigiata White Pine", "Fat Albert Blue Spruce": "Fat Albert Blue Spruce", "Fern Leaf Beech": "Fern Leaf Beech", "Field Maple": "Field Maple", "Fir sp.": "Fir sp.", "Flame Amur Maple": "Flame Amur Maple", "Flax Mill Majesty Sugar Maple": "Flax Mill Majesty Sugar Maple", "Flowering Ash": "Flowering Ash", "Flowering Centurian Crabapple": "Flowering Centurian Crabapple", "Forrest\u2019s Mountain Ash": "Forrest\u2019s Mountain Ash", "Forrest's Rowan Mountain Ash": "Forrest's Rowan Mountain Ash", "Frages Catalpa": "Frages Catalpa", "Fraser Fir": "Fraser Fir", "Freeman Maple": "Freeman Maple", "Freeman Red Maple": "Freeman Red Maple", "Freeman's Maple": "Freeman's Maple", "Fringe Tree": "Fringe Tree", "Frontier Elm": "Frontier Elm", "Fruit Tree - Apple Or Cherry": "Fruit Tree - Apple Or Cherry", "Galaxy Magnolia": "Galaxy Magnolia", "Geneva Hazelnut": "Geneva Hazelnut", "Giant Pussy Willow": "Giant Pussy Willow", "Ginkgo 'Maidenhair Tree'": "Ginkgo 'Maidenhair Tree'", "Ginkgo Magyar": "Ginkgo Magyar", "Glenleven Linden": "Glenleven Linden", "Globe Cedar": "Globe Cedar", "Globe Maple": "Globe Maple", "Globe Norway Maple": "Globe Norway Maple", "Golden Weeping Willow": "Golden Weeping Willow", "Golden Western Cedar": "Golden Western Cedar", "Golden Willow": "Golden Willow", "Goldenchain": "Goldenchain", "Goldrush Dawn Redwood": "Goldrush Dawn Redwood", "Gray Birch": "Gray Birch", "Green Ash": "Green Ash", "Green Cutleaf Beech": "Green Cutleaf Beech", "Green Mountain Sugar Maple": "Green Mountain Sugar Maple", "Green Vase Zelkova": "Green Vase Zelkova", "Grimo Select Butternut": "Grimo Select Butternut", "Grow Low Fragrant Sumac": "Grow Low Fragrant Sumac", "Hackberry": "Hackberry", "Hagensis Willow": "Hagensis Willow", "Hamilton's Spindle Tree": "Hamilton's Spindle Tree", "Hardy Rubber Tree": "Hardy Rubber Tree", "Harlequin Maple": "Harlequin Maple", "Harlequin Norway Maple": "Harlequin Norway Maple", "Harvest Gold Crabapple": "Harvest Gold Crabapple", "Hawthorn sp.": "Hawthorn sp.", "Hawthorns": "Hawthorns", "Hazelnut": "Hazelnut", "Hedge Maple": "Hedge Maple", "Hick's Yew": "Hick's Yew", "Hick\u2019s Yew": "Hick\u2019s Yew", "Hill\u2019s Yew": "Hill\u2019s Yew", "Hills Yew": "Hills Yew", "Himalayan Birch": "Himalayan Birch", "Homestead Elm": "Homestead Elm", "Honey Locust": "Honey Locust", "Honey Sweet Pear": "Honey Sweet Pear", "Hoopsi Blue Spruce": "Hoopsi Blue Spruce", "Hoopsii Blue Spruce": "Hoopsii Blue Spruce", "Hopa Crabapple": "Hopa Crabapple", "Hoptree, Water Ash": "Hoptree, Water Ash", "Horse Chestnut": "Horse Chestnut", "Horse Chestnut Ruby Red": "Horse Chestnut Ruby Red", "Hutchinsons Yellow Willow": "Hutchinsons Yellow Willow", "Hybrid Poplar": "Hybrid Poplar", "Hydrangea": "Hydrangea", "Improved Bechtel Crabapple": "Improved Bechtel Crabapple", "Indian Magic Crabapple": "Indian Magic Crabapple", "Indian Summer Crabapple": "Indian Summer Crabapple", "Irette Purple Willow": "Irette Purple Willow", "Ironwood": "Ironwood", "Iroquois Butternut": "Iroquois Butternut", "Issho Japanese Walnut": "Issho Japanese Walnut", "Ivory Pillar Japanese Lilac": "Ivory Pillar Japanese Lilac", "Ivory Silk Japanese Lilac": "Ivory Silk Japanese Lilac", "Jack Pine": "Jack Pine", "Jacquemontii Birch": "Jacquemontii Birch", "Jacquemontii White Birch": "Jacquemontii White Birch", "Japanee Zelkova": "Japanee Zelkova", "Japanese Catalpa": "Japanese Catalpa", "Japanese Cherry": "Japanese Cherry", "Japanese Fantail Willow": "Japanese Fantail Willow", "Japanese Larch": "Japanese Larch", "Japanese Lilac": "Japanese Lilac", "Japanese Maple": "Japanese Maple", "Japanese Mountain Ash": "Japanese Mountain Ash", "Japanese Pagoda Tree": "Japanese Pagoda Tree", "Japanese Tree Lilac": "Japanese Tree Lilac", "Japanese Whitespire Birch": "Japanese Whitespire Birch", "Japanese Zelkova": "Japanese Zelkova", "Juniper": "Juniper", "Karpick Red Maple": "Karpick Red Maple", "Katsura": "Katsura", "Kentucky Coffeeetree": "Kentucky Coffeeetree", "Klems Bechtel Crabapple": "Klems Bechtel Crabapple", "Kobushi Magnolia": "Kobushi Magnolia", "Korean Mountain Ash": "Korean Mountain Ash", "Korean Spruce": "Korean Spruce", "Kwanzan Japanese Cherry": "Kwanzan Japanese Cherry", "Lancelot Crabapple": "Lancelot Crabapple", "Large-leaved Linden": "Large-leaved Linden", "Largetooth Aspen": "Largetooth Aspen", "Laurel Willow": "Laurel Willow", "Lenne Saucer Magnolia": "Lenne Saucer Magnolia", "Leonard Messel Magnolia": "Leonard Messel Magnolia", "Liberty Elm": "Liberty Elm", "Lilac": "Lilac", "Lilac (pink Flowered)": "Lilac (pink Flowered)", "Linden": "Linden", "Littleleaf Linden": "Littleleaf Linden", "Lombardy Poplar": "Lombardy Poplar", "London Plane Tree": "London Plane Tree", "Louisa Crabapple": "Louisa Crabapple", "Madonna Crabapple": "Madonna Crabapple", "Magnolia": "Magnolia", "Makamic Flowering Crabapple": "Makamic Flowering Crabapple", "Makamik Crabapple": "Makamik Crabapple", "Makamik Flowering Crabapple": "Makamik Flowering Crabapple", "Mancherian Cherry": "Mancherian Cherry", "Manchurian Catalpa": "Manchurian Catalpa", "Manchurian Cherry": "Manchurian Cherry", "Manitoba Maple": "Manitoba Maple", "Maple sp.": "Maple sp.", "Mckaky Willow": "Mckaky Willow", "Middledorp White Birch": "Middledorp White Birch", "Ming Cherry": "Ming Cherry", "Minuet Preston Lilac": "Minuet Preston Lilac", "Miyabeana Willow": "Miyabeana Willow", "Moerheim Blue Spruce": "Moerheim Blue Spruce", "Morden Golden Glow Elderberry": "Morden Golden Glow Elderberry", "Mount Baker Lilac": "Mount Baker Lilac", "Mountain Ash": "Mountain Ash", "Mt Fiji Japanese Cherry": "Mt Fiji Japanese Cherry", "Mugo Pine": "Mugo Pine", "Mulberry": "Mulberry", "Multiflora Rose": "Multiflora Rose", "Multiplex Pear": "Multiplex Pear", "Nanking Cherry": "Nanking Cherry", "Nannyberry": "Nannyberry", "Newport Flowering Plum": "Newport Flowering Plum", "Niedz Crabapple": "Niedz Crabapple", "No Tree": "No Tree", "Northern Catalpa": "Northern Catalpa", "Northern Catalpa Globe": "Northern Catalpa Globe", "Northwood Red Maple": "Northwood Red Maple", "Norway Maple": "Norway Maple", "Norway Maple Globe": "Norway Maple Globe", "Norway Maple Superform": "Norway Maple Superform", "Norway Spruce": "Norway Spruce", "Oak Scarlet": "Oak Scarlet", "Oakleaf Mountain Ash": "Oakleaf Mountain Ash", "Ohio Buckeye": "Ohio Buckeye", "Olive Tree Shrub": "Olive Tree Shrub", "Olivers Lime Linden": "Olivers Lime Linden", "Oregon Ash": "Oregon Ash", "Oriental Spruce": "Oriental Spruce", "Ornamental Cherry Plum": "Ornamental Cherry Plum", "Ornamental Pear": "Ornamental Pear", "Osage Orange": "Osage Orange", "Pacific Sunset Maple": "Pacific Sunset Maple", "Panicled Hydrangea": "Panicled Hydrangea", "Paper Birch": "Paper Birch", "Paperbark Maple": "Paperbark Maple", "Pattern Perfect Tatarian Maple": "Pattern Perfect Tatarian Maple", "Paw Paw": "Paw Paw", "Pear": "Pear", "Pin Cherry": "Pin Cherry", "Pin Oak": "Pin Oak", "Pink Spires Crabapple": "Pink Spires Crabapple", "Plum": "Plum", "Plum x Sweet Cherry - Nadia": "Plum x Sweet Cherry - Nadia", "Poplar sp.": "Poplar sp.", "Prairiefire Crabapple": "Prairiefire Crabapple", "Preston Lilac": "Preston Lilac", "Prickly Leaf Willow": "Prickly Leaf Willow", "Princeton Gold Maple": "Princeton Gold Maple", "Profusion Crabapple": "Profusion Crabapple", "Prospector Elm": "Prospector Elm", "Pumpkin Ash": "Pumpkin Ash", "Purple Gem Crabapple": "Purple Gem Crabapple", "Purple Leaf Cherry": "Purple Leaf Cherry", "Purple Leaf Plum": "Purple Leaf Plum", "Purple Mayday Cherry": "Purple Mayday Cherry", "Purple Sand Cherry": "Purple Sand Cherry", "Purple Sandleaf Cherry": "Purple Sandleaf Cherry", "Purple Willow": "Purple Willow", "Purple-leaf Sandcherry": "Purple-leaf Sandcherry", "Purpleblow Maple": "Purpleblow Maple", "Pussy Willow": "Pussy Willow", "Pyramidal English Oak": "Pyramidal English Oak", "Pyramidal Swedish Aspen": "Pyramidal Swedish Aspen", "Pyramidal Tulip Tree": "Pyramidal Tulip Tree", "Pyramidal White Pine": "Pyramidal White Pine", "Radiant Crabapple": "Radiant Crabapple", "Rainbow Crabapple": "Rainbow Crabapple", "Rancho Sargent Cherry": "Rancho Sargent Cherry", "Rare Crabapple": "Rare Crabapple", "Red Barron Crabapple": "Red Barron Crabapple", "Red Bud": "Red Bud", "Red Cascade European Spindle Tree": "Red Cascade European Spindle Tree", "Red Cedar": "Red Cedar", "Red Crack Willow": "Red Crack Willow", "Red Jade Apple": "Red Jade Apple", "Red Jade Crabapple": "Red Jade Crabapple", "Red Jade Weeping Crabapple": "Red Jade Weeping Crabapple", "Red Maple": "Red Maple", "Red Maple Bowhal": "Red Maple Bowhal", "Red Maple Slessinger": "Red Maple Slessinger", "Red Oak": "Red Oak", "Red Obelisk Beech": "Red Obelisk Beech", "Red Obelisk Crabapple": "Red Obelisk Crabapple", "Red Obilisk Crabapple": "Red Obilisk Crabapple", "Red Osier Dogwood": "Red Osier Dogwood", "Red Pine": "Red Pine", "Red Robin Mountain Ash": "Red Robin Mountain Ash", "Red Splendor Crabapple": "Red Splendor Crabapple", "Red Stem Willow": "Red Stem Willow", "Red Sunset Clump Maple": "Red Sunset Clump Maple", "Red Sunset Maple": "Red Sunset Maple", "Red Tamarix": "Red Tamarix", "Redgold Nectarine": "Redgold Nectarine", "Removed": "Removed", "Rhododendron": "Rhododendron", "River Birch": "River Birch", "Robinson Crabapple": "Robinson Crabapple", "Rock Elm": "Rock Elm", "Rocky Mountain Maple": "Rocky Mountain Maple", "Rose Of Sharon": "Rose Of Sharon", "Rough Leaved Dogwood": "Rough Leaved Dogwood", "Rowan Mountain Ash": "Rowan Mountain Ash", "Royal Beauty Weeping Crabapple": "Royal Beauty Weeping Crabapple", "Royal Crabapple": "Royal Crabapple", "Royal Frost Birch": "Royal Frost Birch", "Royal Frost Weeping Birch": "Royal Frost Weeping Birch", "Royal Knights Blue Spruce": "Royal Knights Blue Spruce", "Royal Raindrop Crabapple": "Royal Raindrop Crabapple", "Royal Red Maple": "Royal Red Maple", "Royal Star White Magnolia": "Royal Star White Magnolia", "Royalty Crabapple": "Royalty Crabapple", "Royalty Preston Lilac": "Royalty Preston Lilac", "Rubber Hardy Tree": "Rubber Hardy Tree", "Ruby Red Horse Chestnut": "Ruby Red Horse Chestnut", "Russian Mountain Ash": "Russian Mountain Ash", "Russian Olive": "Russian Olive", "Russian Olive Tree": "Russian Olive Tree", "Sakhalin Corktree": "Sakhalin Corktree", "Sandow Dwarf Apple": "Sandow Dwarf Apple", "Sassafras": "Sassafras", "Scarlet Oak": "Scarlet Oak", "Schubert Cherry": "Schubert Cherry", "Schubert Chokecherry": "Schubert Chokecherry", "Schwedler Norway Maple": "Schwedler Norway Maple", "Scots Pine": "Scots Pine", "Select Willow": "Select Willow", "Sentinel Pine": "Sentinel Pine", "Serbian Spruce": "Serbian Spruce", "Serviceberry": "Serviceberry", "Seven-son Flower": "Seven-son Flower", "Shagbark Hickory": "Shagbark Hickory", "Shiloh Splash Rivers Birch": "Shiloh Splash Rivers Birch", "Shingle Oak": "Shingle Oak", "Showy Mountain Ash": "Showy Mountain Ash", "Shubert Cherry": "Shubert Cherry", "Siberian Columnar Crabapple": "Siberian Columnar Crabapple", "Siberian Crabapple": "Siberian Crabapple", "Siberian Elm": "Siberian Elm", "Siberian Peashrub": "Siberian Peashrub", "Siebold Euonymos": "Siebold Euonymos", "Siebold Viburnum": "Siebold Viburnum", "Siebold\u2019s Crabapple": "Siebold\u2019s Crabapple", "Sieboldianu Euonymus": "Sieboldianu Euonymus", "Silver Basswood": "Silver Basswood", "Silver Birch": "Silver Birch", "Silver Cascade Pear": "Silver Cascade Pear", "Silver Maple": "Silver Maple", "Silver Ornamental Pear": "Silver Ornamental Pear", "Singleseed Hawthorn": "Singleseed Hawthorn", "Sir Lancelot Crabapple": "Sir Lancelot Crabapple", "Skinner American Hazelnut": "Skinner American Hazelnut", "Slender Willow": "Slender Willow", "Slippery Elm": "Slippery Elm", "Slippery Red Elm": "Slippery Red Elm", "Smith Willow": "Smith Willow", "Smoke Tree": "Smoke Tree", "Snowdrift Crabapple": "Snowdrift Crabapple", "Snowdrift Crabapple Clump": "Snowdrift Crabapple Clump", "Snowflake Crabapple": "Snowflake Crabapple", "Snowmound Spirea": "Snowmound Spirea", "Southern Catalpa": "Southern Catalpa", "Spicebush": "Spicebush", "Spindle Tree": "Spindle Tree", "Splitleaf Sumac": "Splitleaf Sumac", "Spring Flowering Serviceberry": "Spring Flowering Serviceberry", "Spring Flurry Serviceberry": "Spring Flurry Serviceberry", "Spring Snow White Crabapple": "Spring Snow White Crabapple", "Spruce sp.": "Spruce sp.", "Sterling Silver Linden": "Sterling Silver Linden", "Streamco Willow": "Streamco Willow", "Striped Maple": "Striped Maple", "Stump": "Stump", "Stump Present": "Stump Present", "Sugar Hackberry": "Sugar Hackberry", "Sugar Hackberry, Sugarberry": "Sugar Hackberry, Sugarberry", "Sugar Maple": "Sugar Maple", "Sugarberry": "Sugarberry", "Sugartyme Crabapple": "Sugartyme Crabapple", "Sumac": "Sumac", "Sumac Leafed Lilac": "Sumac Leafed Lilac", "Sun Valley Red Maple": "Sun Valley Red Maple", "Sunburst Honey Locust": "Sunburst Honey Locust", "Susan Magnolia": "Susan Magnolia", "Swamp Rose": "Swamp Rose", "Swamp White Oak": "Swamp White Oak", "Swamp Willow": "Swamp Willow", "Swedish Columnar Aspen": "Swedish Columnar Aspen", "Sweet Cherry": "Sweet Cherry", "Sweet Cherry - Black Gold": "Sweet Cherry - Black Gold", "Sweet Cherry - Ebony Pearl": "Sweet Cherry - Ebony Pearl", "Sweet Gum": "Sweet Gum", "Sweet Sixteen Apple": "Sweet Sixteen Apple", "Sycamore": "Sycamore", "Sycamore Maple": "Sycamore Maple", "Tamarack": "Tamarack", "Tartarian Maple": "Tartarian Maple", "Tatarian Honeysuckle": "Tatarian Honeysuckle", "Tatarian Maple": "Tatarian Maple", "Thorlow Weeping Willow": "Thorlow Weeping Willow", "Thornless Honey Locust": "Thornless Honey Locust", "Thorny Blue Russian Olive": "Thorny Blue Russian Olive", "Thorny Honey Locust": "Thorny Honey Locust", "Thunderchild Crabapple": "Thunderchild Crabapple", "Tree Of Heaven": "Tree Of Heaven", "Tree Removed": "Tree Removed", "Trembling Aspen": "Trembling Aspen", "Tricolour Beech": "Tricolour Beech", "Tulip Tree": "Tulip Tree", "Turkestan Maple": "Turkestan Maple", "Turkish Filbert": "Turkish Filbert", "Turkish Hazel": "Turkish Hazel", "Twisted Willow": "Twisted Willow", "Umbrella Magnolia": "Umbrella Magnolia", "Unidentified": "Unidentified", "Uzbekistan Prunus": "Uzbekistan Prunus", "Variegated Beech": "Variegated Beech", "Variegated River Birch": "Variegated River Birch", "Variegated Weigela": "Variegated Weigela", "Venus Hybrid Dogwood": "Venus Hybrid Dogwood", "Viburnum sp.": "Viburnum sp.", "Viburum sp.": "Viburum sp.", "Villosa Lilac": "Villosa Lilac", "Wada's Memory Magnolia": "Wada's Memory Magnolia", "Waterlily Magnolia": "Waterlily Magnolia", "Weeping Beech": "Weeping Beech", "Weeping Crabapple": "Weeping Crabapple", "Weeping Elm": "Weeping Elm", "Weeping Golden Willow": "Weeping Golden Willow", "Weeping Larch": "Weeping Larch", "Weeping Mulberry": "Weeping Mulberry", "Weeping Nootka Cypress": "Weeping Nootka Cypress", "Weeping Norway Spruce": "Weeping Norway Spruce", "Weeping Purple Beech": "Weeping Purple Beech", "Weeping Red Jewel Crabapple": "Weeping Red Jewel Crabapple", "Weeping Siberian Crabapple": "Weeping Siberian Crabapple", "Weeping Siberian Peashrub": "Weeping Siberian Peashrub", "Weeping White Mulberry": "Weeping White Mulberry", "Weeping Willow": "Weeping Willow", "Western Red Cedar": "Western Red Cedar", "Westwood Korean Sun Pear": "Westwood Korean Sun Pear", "White Angel Crabapple": "White Angel Crabapple", "White Ash": "White Ash", "White Birch": "White Birch", "White Cedar": "White Cedar", "White Elderberry": "White Elderberry", "White Elm": "White Elm", "White Fir": "White Fir", "White Mulberry": "White Mulberry", "White Oak": "White Oak", "White Pine": "White Pine", "White Poplar": "White Poplar", "White Spruce": "White Spruce", "White Starlike Magnolia": "White Starlike Magnolia", "White Willow": "White Willow", "Wild Plum": "Wild Plum", "Willow Leaf Pear": "Willow Leaf Pear", "Willow Shrub": "Willow Shrub", "Willow sp.": "Willow sp.", "Willow-leafed Pear": "Willow-leafed Pear", "Winged Euonymus": "Winged Euonymus", "Winterberry Euonymus": "Winterberry Euonymus", "Witch-hazel": "Witch-hazel", "Wolf Lilac": "Wolf Lilac", "Wonder White Willow": "Wonder White Willow", "Wonderblue French Blue Hybrid Lilac": "Wonderblue French Blue Hybrid Lilac", "Yellow Birch": "Yellow Birch", "Yellow Bird Magnolia": "Yellow Bird Magnolia", "Yellow Buckeye": "Yellow Buckeye", "Yellow Paint Maple": "Yellow Paint Maple", "Yellow Stem Flame Willow": "Yellow Stem Flame Willow", "Yellowwood": "Yellowwood", "Yew": "Yew", "Yunnan Crabapple": "Yunnan Crabapple", "Zelkova": "Zelkova", "Zig Zag Mulberry": "Zig Zag Mulberry"}, "OVERHEAL": {"Good": "Good", "Satisfactory": "Satisfactory", "Potential trouble": "Potential trouble", "Declining": "Declining", "Death imminent": "Death imminent", "Dead": "Dead", "Removed": "Removed", "Stump": "Stump", "Stump carving": "Stump carving"}, "STRUDEFE": {"No problem": "No problem", "MINOR (<34%)": "MINOR (<34%)", "MAJOR (35-65%)": "MAJOR (35-65%)", "EXTREME (>65%)": "EXTREME (>65%)"}, "WOUNCANK": {"No problem": "No problem", "MINOR (<34%)": "MINOR (<34%)", "MAJOR (35-65%)": "MAJOR (35-65%)", "EXTREME (>65%)": "EXTREME (>65%)"}, "DEADDECAY": {"NO PROBLEM (no visible problem)": "NO PROBLEM (no visible problem)", "MINOR (<5%)": "MINOR (<5%)", "MAJOR (10-30%)": "MAJOR (10-30%)", "EXTREME (>30%)": "EXTREME (>30%)"}, "FAILPOTE": {"Low": "Low", "Medium": "Medium", "High": "High"}, "IMPEDMNT": {"None": "None", "Fence": "Fence", "Hydrant": "Fire Hydrant", "Ohwire": "Overhead wire", "Sign": "Sign", "Buildstruct": "Building-structure", "Stlight": "Street light", "Trstake": "Tree stake", "Mailbox": "Mailbox", "Ugutility": "Underground utilities", "Astroturf": "Astroturf", "Other": "Other"}, "PESTDISEAS": {"None observed": "None observed", "Aphids": "Aphids", "Bacterial infection": "Bacterial infection", "Black knot": "Black knot", "Bladder gall mites": "Bladder gall mites", "Blight (general)": "Blight (general)", "Borers": "Borers", "Canker (general)": "Canker (general)", "Confirmed EAB": "Confirmed EAB", "Deer browse": "Deer browse", "Deer or rodent debarking": "Deer or rodent debarking", "Diplodia": "Diplodia", "EAB (evidence)": "EAB (evidence)", "Eutypella canker": "Eutypella canker", "Fungal infection": "Fungal infection", "Gall (general)": "Gall (general)", "Ganoderma fungus": "Ganoderma fungus", "Gypsy moth / LDD moth": "Gypsy moth / LDD moth", "Hackberry gall": "Hackberry gall", "Hackberry psyllid (galls)": "Hackberry psyllid (galls)", "Internal decay": "Internal decay", "Leaf feeding (general)": "Leaf feeding (general)", "Mossy top": "Mossy top", "Nectria canker": "Nectria canker", "Plant bug": "Plant bug", "Possible needle blight": "Possible needle blight", "Possible needle cast": "Possible needle cast", "Potential EAB": "Potential EAB", "Rodent damage": "Rodent damage", "Spindle gall": "Spindle gall", "Rust": "Rust", "Tar spot": "Tar spot", "Anthracnose": "Anthracnose", "Chlorosis": "Chlorosis", "Leaf blotch": "Leaf blotch", "Leaf scorch": "Leaf scorch", "Drought stress": "Drought stress", "Other": "Other"}, "RECOTREA": {"No Treatment": "No Treatment", "Pruning - Immediate": "Pruning - Immediate", "Pruning - High Priority": "Pruning - High Priority", "Routine Pruning": "Routine Pruning", "Training Pruning": "Training Pruning", "Removal-Immediate": "Removal-Immediate", "Removal - High Priority": "Removal - High Priority", "Removal - Low Priority": "Removal - Low Priority", "Potential planting site": "Potential planting site", "Remove stump, potential planting site": "Remove stump, potential planting site", "Other": "Other"}, "SITELOCA": {"Boulevard": "Boulevard", "Lawn": "Lawn", "Centre median": "Centre median", "Raised planter": "Raised planter", "Ground level planter": "Ground level planter", "Other": "Other"}, "DBH": {"0": "0", "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6", "7": "7", "8": "8", "9": "9", "10": "10", "11": "11", "12": "12", "13": "13", "14": "14", "15": "15", "16": "16", "17": "17", "18": "18", "19": "19", "20": "20", "21": "21", "22": "22", "23": "23", "24": "24", "25": "25", "26": "26", "27": "27", "28": "28", "29": "29", "30": "30", "31": "31", "32": "32", "33": "33", "34": "34", "35": "35", "36": "36", "37": "37", "38": "38", "39": "39", "40": "40", "41": "41", "42": "42", "43": "43", "44": "44", "45": "45", "46": "46", "47": "47", "48": "48", "49": "49", "50": "50", "51": "51", "52": "52", "53": "53", "54": "54", "55": "55", "56": "56", "57": "57", "58": "58", "59": "59", "60": "60", "61": "61", "62": "62", "63": "63", "64": "64", "65": "65", "66": "66", "67": "67", "68": "68", "69": "69", "70": "70", "71": "71", "72": "72", "73": "73", "74": "74", "75": "75", "76": "76", "77": "77", "78": "78", "79": "79", "80": "80", "81": "81", "82": "82", "83": "83", "84": "84", "85": "85", "86": "86", "87": "87", "88": "88", "89": "89", "90": "90", "91": "91", "92": "92", "93": "93", "94": "94", "95": "95", "96": "96", "97": "97", "98": "98", "99": "99", "100": "100", "101": "101", "102": "102", "103": "103", "104": "104", "105": "105", "106": "106", "107": "107", "108": "108", "109": "109", "110": "110", "111": "111", "112": "112", "113": "113", "114": "114", "115": "115", "116": "116", "117": "117", "118": "118", "119": "119", "120": "120", "121": "121", "122": "122", "123": "123", "124": "124", "125": "125", "126": "126", "127": "127", "128": "128", "129": "129", "130": "130", "131": "131", "132": "132", "133": "133", "134": "134", "135": "135", "136": "136", "137": "137", "138": "138", "139": "139", "140": "140", "141": "141", "142": "142", "143": "143", "144": "144", "145": "145", "146": "146", "147": "147", "148": "148", "149": "149", "150": "150", "151": "151", "152": "152", "153": "153", "154": "154", "155": "155", "156": "156", "157": "157", "158": "158", "159": "159", "160": "160", "161": "161", "162": "162", "163": "163", "164": "164", "165": "165", "166": "166", "167": "167", "168": "168", "169": "169", "170": "170", "171": "171", "172": "172", "173": "173", "174": "174", "175": "175", "176": "176", "177": "177", "178": "178", "179": "179", "180": "180", "181": "181", "182": "182", "183": "183", "184": "184", "185": "185", "186": "186", "187": "187", "188": "188", "189": "189", "190": "190", "191": "191", "192": "192", "193": "193", "194": "194", "195": "195", "196": "196", "197": "197", "198": "198", "199": "199", "200": "200", "201": "201", "202": "202", "203": "203", "204": "204", "205": "205", "206": "206", "207": "207", "208": "208", "209": "209", "210": "210", "211": "211", "212": "212", "213": "213", "214": "214", "215": "215", "216": "216", "217": "217", "218": "218", "219": "219", "220": "220", "221": "221", "222": "222", "223": "223", "224": "224", "225": "225", "226": "226", "227": "227", "228": "228", "229": "229", "230": "230", "231": "231", "232": "232", "233": "233", "234": "234", "235": "235", "236": "236", "237": "237", "238": "238", "239": "239", "240": "240", "241": "241", "242": "242", "243": "243", "244": "244", "245": "245", "246": "246", "247": "247", "248": "248", "249": "249"}};
+
+const HEALTH_COLOR = {'Good':'#3FA45B','Satisfactory':'#7CB342','Potential trouble':'#E0B400','Declining':'#E8862B','Dead':'#D0402B','Death imminent':'#D0402B','Removed':'#7A868E','Stump':'#7A868E','Stump carving':'#7A868E'};
+const ACT_FIELDS = {
+  'Inspection': ['condition','defects','dbh','recommend'],
+  'Planted':    ['species','dbh','condition','defects'],
+  'Pruned':     ['notes'],
+  'Cabled':     ['notes'],
+  'Mulched':    ['notes'],
+  'Fertilized': ['notes'],
+  'Injected':   ['notes'],
+  'Removed':    ['notes']
+};
+</script>
+<script>
+console.log("Aurora field build: beta-offline-v1");
+/* ============================================================
+   ArcGIS integration
+   ============================================================ */
+let view, map, treeLayer, inspLayer, parcelLayer=null, gridLayer=null, roadsLayer=null, basemapToggleIdx=0;
+let treeDateField='DATE', inspDateField=null;
+function pickFieldName(fields, want){
+  if(!fields) return want;
+  let f=fields.find(x=>x.name && x.name.toUpperCase()===want.toUpperCase());
+  if(!f) f=fields.find(x=>x.alias && x.alias.toUpperCase()===want.toUpperCase());
+  return f?f.name:want;
+}
+function pickDateTypeField(fields){
+  if(!fields) return null;
+  const skip=/(creation|edit|created|last_edit)/i;
+  const f=fields.find(x=>x.type==='date' && !skip.test(x.name||'') && !skip.test(x.alias||''));
+  return f?f.name:null;
+}
+let taxoLayer=null, esriRequest=null, projection=null, SpatialRef=null, FeatureLayerC=null, parksLayer=null, PolylineC=null;
+let highlightLayer=null, highlightWhere="DATE_NEW < DATE '2023-01-01'";
+// --- offline support helpers ---
+// queued-but-not-uploaded attribute changes, keyed by GlobalID, merged when a tree is opened
+const _pendingEdits={};
+function applyPendingEdit(gid, attrs){ if(!gid) return; _pendingEdits[gid]=Object.assign({}, _pendingEdits[gid]||{}, attrs); if(typeof _preloadCache!=='undefined' && _preloadCache[gid]) _preloadCache[gid]=Object.assign({}, _preloadCache[gid], attrs); }
+function clearPendingEdit(gid){ if(gid) delete _pendingEdits[gid]; }
+// trees edited on THIS device this session — their yellow "not visited" halo clears immediately
+const _touchedLocally=new Set();
+function markTreeVisitedLocally(gid){ if(!gid) return; _touchedLocally.add(String(gid)); refreshHighlight(); }
+function refreshHighlight(){
+  if(!highlightLayer) return;
+  let where=highlightWhere;
+  if(_touchedLocally.size){ const ids=Array.from(_touchedLocally).map(x=>"'"+String(x).replace(/'/g,"''")+"'").join(','); where="("+where+") AND GlobalID NOT IN ("+ids+")"; }
+  highlightLayer.definitionExpression=where;   // re-filters locally; no server refresh
+}
+let geometryEngine=null, gpsWatch=null, gpsGraphic=null, gpsRing=null, lastGps=null;
+let followGps=true, _userPanned=false;   // map auto-centers on GPS until the user pans
+let derived={};   // auto-computed field values for the tree currently being added/edited
+let currentInspector='', idPick='';
+let addMode=false, provisional=null, selectedGraphic=null, _dragHandle=null;
+let esriId, GraphicC, PointC;
+let dayAdded=0, dayEdited=0, dayLogged=0, dashPeriod='today';
+function bumpDay(kind){
+  if(kind==='add')dayAdded++; else if(kind==='edit')dayEdited++; else if(kind==='log')dayLogged++;
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  s('rAdded',dayAdded); s('rEdited',dayEdited); s('rLogged',dayLogged);
+}
+let BASES=["arcgis-imagery","arcgis-topographic","hybrid"];
+const BASELBL=["York 2024","streets","Esri sat"];
+
+require([
+  "esri/config","esri/identity/OAuthInfo","esri/identity/IdentityManager",
+  "esri/Map","esri/views/MapView","esri/layers/FeatureLayer","esri/Graphic",
+  "esri/geometry/Point","esri/renderers/UniqueValueRenderer","esri/symbols/SimpleMarkerSymbol",
+  "esri/layers/TileLayer","esri/Basemap","esri/request","esri/geometry/projection","esri/geometry/SpatialReference","esri/geometry/geometryEngine","esri/geometry/Polyline"
+], function(esriConfig,OAuthInfo,IdentityManager,Map,MapView,FeatureLayer,Graphic,Point,UniqueValueRenderer,SimpleMarkerSymbol,TileLayer,Basemap,esriRequestMod,projectionMod,SpatialReference,geometryEngineMod,PolylineMod){
+  esriId=IdentityManager; GraphicC=Graphic; PointC=Point; FeatureLayerC=FeatureLayer;
+  esriRequest=esriRequestMod; projection=projectionMod; SpatialRef=SpatialReference; geometryEngine=geometryEngineMod; PolylineC=PolylineMod;
+  projection.load();
+  taxoLayer=new FeatureLayer({portalItem:{id:CONFIG.taxonomyItemId}});
+  const info=new OAuthInfo({appId:CONFIG.appId, portalUrl:CONFIG.portalUrl, popup:false});
+  esriId.registerOAuthInfos([info]);
+
+  document.getElementById('signInBtn').onclick=()=>{
+    esriId.getCredential(CONFIG.portalUrl+"/sharing").catch(e=>{
+      document.getElementById('gateErr').textContent="Sign-in failed: "+(e && e.message||e);
+    });
+  };
+
+  esriId.checkSignInStatus(CONFIG.portalUrl+"/sharing").then(start).catch(()=>{
+    document.getElementById('boot').classList.add('hidden');
+    document.getElementById('gate').classList.remove('hidden');
+  });
+
+  function start(){
+    document.getElementById('gate').classList.add('hidden');
+    // health renderer — smaller dots so the yellow (pre-2023) halo shows through
+    const sym=c=>new SimpleMarkerSymbol({color:c,size:8,outline:{color:"#fff",width:1.2}});
+    // the layer's condition values vary in case (e.g. "GOOD" vs "Good"); a plain field match is
+    // case-sensitive and would drop those trees to the grey default, so normalise first (matches the dashboard)
+    const normExpr = "var v = Lower(Trim($feature.OVERHEAL));"
+      + "if(v=='good') return 'Good';"
+      + "if(v=='satisfactory') return 'Satisfactory';"
+      + "if(v=='potential trouble') return 'Potential trouble';"
+      + "if(v=='declining') return 'Declining';"
+      + "if(v=='dead') return 'Dead';"
+      + "if(v=='death imminent') return 'Death imminent';"
+      + "if(v=='removed') return 'Removed';"
+      + "if(v=='stump') return 'Stump';"
+      + "if(v=='stump carving') return 'Stump carving';"
+      + "return $feature.OVERHEAL;";
+    const renderer=new UniqueValueRenderer({valueExpression:normExpr,defaultSymbol:sym("#7A868E"),defaultLabel:"Other"});
+    Object.keys(HEALTH_COLOR).forEach(v=>renderer.addUniqueValueInfo({value:v,symbol:sym(HEALTH_COLOR[v])}));
+
+    treeLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, outFields:["*"], renderer, minScale:15000, maxScale:0});
+    inspLayer=new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.inspTableId, outFields:["*"]});
+
+    const B=CONFIG.parcelBase;
+    const mapLayers=[];
+    // GRID — visible only when zoomed OUT, labelled with the page number
+    gridLayer=null;
+    if(CONFIG.gridUrl){ gridLayer=new FeatureLayer({url:CONFIG.gridUrl, minScale:0, maxScale:12000,
+      renderer:{type:"simple", symbol:{type:"simple-fill", color:[0,0,0,0], outline:{color:[130,180,255,0.7], width:1}}},
+      labelingInfo:[{symbol:{type:"text", color:"#A9C8FF", haloColor:"#0F151A", haloSize:1.4, font:{size:14,weight:"bold"}}, labelPlacement:"always-horizontal", labelExpressionInfo:{expression:"$feature."+CONFIG.gridLabelField}}]});
+      mapLayers.push(gridLayer); }
+    // PARCELS — visible when moderately zoomed in; disappear sooner when zooming out; address labels at full zoom
+    if(B){ parcelLayer=new FeatureLayer({url:B+"/"+CONFIG.parcelLayerId, outFields:[CONFIG.parcelAddressField], minScale:6000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-fill", color:[0,0,0,0], outline:{color:[255,255,255,0.5], width:0.7}}},
+      labelingInfo:[{minScale:2000, maxScale:0, symbol:{type:"text", color:"#E8EEF1", haloColor:"#0F151A", haloSize:1.2, font:{size:9}}, labelPlacement:"always-horizontal", labelExpressionInfo:{expression:"$feature."+CONFIG.parcelAddressField}}]});
+      mapLayers.push(parcelLayer); }
+    // ROADS — visible when zoomed IN, labelled with the street name
+    roadsLayer=null;
+    if(CONFIG.roadsUrl){ roadsLayer=new FeatureLayer({url:CONFIG.roadsUrl, minScale:20000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-line", color:[255,224,130,0.55], width:1}},
+      labelingInfo:[{symbol:{type:"text", color:"#FFE082", haloColor:"#0F151A", haloSize:1.2, font:{size:9,weight:"bold"}}, labelPlacement:"center-along", labelExpressionInfo:{expression:"$feature."+CONFIG.roadsLabelField}}]});
+      mapLayers.push(roadsLayer); }
+    // OLD-TREE HALO — large transparent yellow dot behind trees dated before 2023
+    if(CONFIG.parksUrl){ parksLayer=new FeatureLayer({url:CONFIG.parksUrl, outFields:[CONFIG.parkNameField]}); }
+    highlightWhere = CONFIG.oldTreeWhere || "1=2";
+    highlightLayer = new FeatureLayer({url:CONFIG.serviceUrl+"/"+CONFIG.treeLayerId, definitionExpression:highlightWhere, minScale:20000, maxScale:0,
+      renderer:{type:"simple", symbol:{type:"simple-marker", color:[255,221,84,0.78], size:18, outline:{color:[230,184,0,0.95], width:1.6}}}});
+    mapLayers.push(highlightLayer);
+    mapLayers.push(treeLayer);   // main health-coloured trees on top
+
+    // York Region 2024 imagery as the default basemap (matches Field Maps)
+    let startBasemap=BASES[0];
+    if(CONFIG.yorkImageryUrl){
+      const yorkBase=new Basemap({baseLayers:[new TileLayer({url:CONFIG.yorkImageryUrl})], title:"York 2024", id:"york2024"});
+      BASES[0]=yorkBase; startBasemap=yorkBase;
+    }
+    map=new Map({basemap:startBasemap, layers:mapLayers});
+    view=new MapView({container:"map", map, zoom:16, center:[-79.4242,44.0088], ui:{components:[]}});
+
+    view.when(()=>{
+      document.getElementById('boot').classList.add('hidden');
+      treeLayer.when(()=>{ const el=document.getElementById('rTrees'); treeLayer.queryFeatureCount().then(n=>{ if(el)el.textContent=n; });
+        treeDateField = pickFieldName(treeLayer.fields,'DATE'); });
+      inspLayer.when(()=>{ inspDateField = pickFieldName(inspLayer.fields,'DATE'); if(!inspDateField||inspDateField==='DATE'){ const dt=pickDateTypeField(inspLayer.fields); if(dt) inspDateField=dt; } }).catch(()=>{});
+      // open the map at the full extent of the grid, so all grid pages are visible
+      if(gridLayer){ gridLayer.when(()=>{ if(gridLayer.fullExtent) view.goTo(gridLayer.fullExtent).catch(()=>{}); })
+        .catch(()=>{ treeLayer.when(()=>{ if(treeLayer.fullExtent) view.goTo(treeLayer.fullExtent).catch(()=>{}); }); }); }
+      else { treeLayer.when(()=>{ if(treeLayer.fullExtent) view.goTo(treeLayer.fullExtent).catch(()=>{}); }); }
+      showIdentity();
+      loadTaxonomy();
+      startTracking();                                   // begin following the user's GPS
+      // stop auto-following the moment the user drags the map; a two-finger pan counts too
+      view.on("drag", ()=>{ if(followGps){ followGps=false; const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following'); } });
+    });
+
+    view.on("click",(e)=>{
+      if(addMode){ placeProvisional(e.mapPoint); return; }
+      view.hitTest(e).then(res=>{
+        const hit=res.results.find(r=>r.graphic && r.graphic.layer===treeLayer);
+        if(hit) openTree(hit.graphic);
+      });
+    });
+
+    window.addEventListener("online", flushQueue);
+    window.addEventListener("offline", ()=>document.getElementById('offline').classList.add('show'));
+    if(!navigator.onLine) document.getElementById('offline').classList.add('show');
+    Buffer.init().then(()=>{ requestPersistence(); Buffer.count().then(n=>{ updateQueueBadge(n); if(n>0 && navigator.onLine) flushQueue(); }); });
+  }
+});
+
+/* ------------- helpers ------------- */const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+/* ------------- identity ------------- */
+function showIdentity(){
+  const d=DOMAINS.inspector_name||{};
+  document.getElementById('idQuick').innerHTML=Object.keys(d).map(c=>`<button onclick="pickInspector('${esc(c)}',this)">${esc(c)}</button>`).join('');
+  document.getElementById('idName').value = currentInspector && !(currentInspector in d) ? currentInspector : '';
+  idPick = currentInspector||'';
+  document.getElementById('identity').classList.remove('hidden');
+}
+function pickInspector(v,btn){ idPick=v; document.getElementById('idName').value=''; document.querySelectorAll('#idQuick button').forEach(b=>b.classList.remove('sel')); if(btn) btn.classList.add('sel'); }
+function commitIdentity(){
+  const typed=document.getElementById('idName').value.trim();
+  const who=typed||idPick;
+  if(!who){ toast('Enter your name or pick your initials','warn'); return; }
+  currentInspector=who; const c=document.getElementById('userChip'); if(c) c.textContent=who;
+  document.getElementById('identity').classList.add('hidden');
+  toast(`Logging as ${who}`,'ok');
+}
+/* custom confirm dialog (reliable across devices) */
+let cfCallback=null;
+function confirmDialog(title,msg,yesLabel,onYes){
+  document.getElementById('cfTitle').textContent=title;
+  document.getElementById('cfMsg').textContent=msg;
+  document.getElementById('cfYes').textContent=yesLabel||'Delete';
+  cfCallback=onYes;
+  document.getElementById('cfYes').onclick=()=>{ document.getElementById('confirmWrap').classList.remove('show'); if(cfCallback)cfCallback(); };
+  document.getElementById('confirmWrap').classList.add('show');
+}
+function cfNo(){ document.getElementById('confirmWrap').classList.remove('show'); cfCallback=null; }
+/* load & show attachments for a feature */
+// remember the layer + container so a delete can refresh the same view
+const _attachCtx={};
+function showAttachments(layer, oid, containerId, label){
+  const box=document.getElementById(containerId); if(!box)return;
+  if(!layer||oid==null){box.innerHTML='';return;}
+  _attachCtx[containerId]={layer:layer, oid:oid, label:label};
+  layer.queryAttachments({objectIds:[oid]}).then(mapp=>{
+    const atts=(mapp&&mapp[oid])||[];
+    if(!atts.length){box.innerHTML='';return;}
+    box.innerHTML=`<div class="slabel">${label} · ${atts.length}</div><div class="att"><div class="grid" id="${containerId}_g"></div></div>`;
+    const g=document.getElementById(containerId+'_g');
+    atts.forEach(a=>{
+      const cell=document.createElement('div'); cell.className='thumb';
+      // delete button on every attachment
+      const del='<button type="button" class="rmphoto" title="Delete photo" onclick="deleteAttachment(\''+containerId+'\','+a.id+')">\u2715</button>';
+      if(a.contentType&&a.contentType.indexOf('image')===0){
+        cell.innerHTML='<div class="file">\u2026</div>'+del;
+        // fetch through the SDK so the auth token is handled correctly, then show as a blob
+        esriRequest(a.url,{responseType:"blob",authMode:"auto"}).then(r=>{
+          const u=URL.createObjectURL(r.data);
+          cell.innerHTML='<a href="'+u+'" target="_blank"><img src="'+u+'"></a>'+del;
+        }).catch(()=>{ cell.innerHTML='<div class="file">photo</div>'+del; });
+      } else {
+        cell.innerHTML='<div class="file">'+esc(a.name||'file')+'</div>'+del;
+      }
+      g.appendChild(cell);
+    });
+  }).catch(()=>{box.innerHTML='';});
+}
+// delete a single saved attachment (with confirm), then refresh that photo grid
+function deleteAttachment(containerId, attachmentId){
+  const ctx=_attachCtx[containerId]; if(!ctx) return;
+  confirmDialog('Delete this photo?','This permanently removes the photo. This cannot be undone.','Delete photo',()=>{
+    const feature=new GraphicC({attributes:{[ctx.layer.objectIdField]:ctx.oid}});
+    ctx.layer.deleteAttachments(feature,[attachmentId]).then(r=>{
+      const res=r&&r[0]; if(res&&res.error) throw res.error;
+      toast('Photo deleted','ok');
+      showAttachments(ctx.layer, ctx.oid, containerId, ctx.label);   // refresh the grid
+    }).catch(err=>toast('Delete failed: '+((err&&err.message)||err),'err'));
+  });
+}
+const esc=s=>(s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const val=v=>(v==null||v===''||v==='None')?'—':v;
+const dval=v=>(v==null||v==='')?'—':v;   // preserves 'None' for domains where it is a real value (e.g. Impediment)
+const _HC_LC=(function(){const m={};Object.keys(HEALTH_COLOR).forEach(k=>{m[k.toLowerCase()]=HEALTH_COLOR[k];});return m;})();
+const healthColor=h=>{ if(h==null)return '#7A868E'; return HEALTH_COLOR[h] || _HC_LC[String(h).trim().toLowerCase()] || '#7A868E'; };
+const attr=(g,k)=>g.attributes[k];
+function today(){return new Date().toISOString().slice(0,10);}
+function fmtDate(v){if(v==null||v==='')return '—';const d=new Date(v);return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10);}
+// resolve a log record's date across possible fields (app writes inspection_date; legacy records may use DATE/ACTIVITY_DATE)
+function logDate(R){
+  if(inspDateField && R[inspDateField]!=null && R[inspDateField]!=='') return R[inspDateField];
+  const cands=[R.inspection_date, R.ACTIVITY_DATE, R.DATE];
+  for(const v of cands){ if(v!=null && v!=='') return v; }
+  const skip=/^(creationdate|editdate|globalid)/i;
+  for(const k in R){ const kl=k.toLowerCase(); if(kl.indexOf('date')>=0 && !skip.test(kl) && R[k]!=null && R[k]!==''){ return R[k]; } }
+  return null;
+}
+function fmtDateInput(v){ if(v==null||v==='')return ''; const d=new Date(v); return isNaN(d)?String(v).slice(0,10):d.toISOString().slice(0,10); }
+function lastInvDate(a){
+  // read the real DATE field — its name may differ from its alias "DATE"
+  let v = a[treeDateField];
+  if(v==null||v===''){ v=(a.DATE!=null&&a.DATE!=='')?a.DATE:null; }
+  if(v==null||v===''){ for(const k in a){ if(k.toLowerCase()==='date' && a[k]!=null && a[k]!==''){ v=a[k]; break; } } }
+  return (v!=null&&v!=='')?fmtDate(v):'—';
+}
+function options(dkey,current,blank){
+  const d=DOMAINS[dkey]||{};
+  const cur=(current==null?'':String(current));
+  // does the current value exactly match a domain key?
+  let matched=false; for(const c in d){ if(String(c)===cur){ matched=true; break; } }
+  let h=blank?'<option value="">\u2014</option>':'';
+  // if the tree already has a value that isn't in the domain list, show it (selected) so its real data appears
+  if(cur!=='' && !matched){ h+=`<option value="${esc(cur)}" selected>${esc(cur)}</option>`; }
+  for(const c in d){ h+=`<option value="${esc(c)}"${cur===String(c)?' selected':''}>${esc(d[c])}</option>`; }
+  return h;
+}
+/* ---- species master list (from the official taxonomy table) + rapid-entry recents ---- */
+let taxoRows=[], taxoMap={}, recentSpecies=[], recentDbh=[], speciesFreq={}, dbhFreq={}, domainFreq={};
+// restore usage frequencies so commonly-entered species/DBH stay at the top of the list across sessions
+(function(){ try{
+  const s=localStorage.getItem('aurora_speciesFreq'); if(s) speciesFreq=JSON.parse(s)||{};
+  const d=localStorage.getItem('aurora_dbhFreq'); if(d) dbhFreq=JSON.parse(d)||{};
+  const rs=localStorage.getItem('aurora_recentSpecies'); if(rs) recentSpecies=JSON.parse(rs)||[];
+  const df=localStorage.getItem('aurora_domainFreq'); if(df) domainFreq=JSON.parse(df)||{};
+}catch(e){} })();
+function _persistFreq(){ try{
+  localStorage.setItem('aurora_speciesFreq', JSON.stringify(speciesFreq));
+  localStorage.setItem('aurora_dbhFreq', JSON.stringify(dbhFreq));
+  localStorage.setItem('aurora_recentSpecies', JSON.stringify(recentSpecies.slice(0,10)));
+  localStorage.setItem('aurora_domainFreq', JSON.stringify(domainFreq));
+}catch(e){} }
+// record that a value was chosen from a domain picker (so frequent picks rise to the top)
+function recordDomainPick(dkey, code){ if(code==null||code==='')return; domainFreq[dkey]=domainFreq[dkey]||{}; const k=String(code); domainFreq[dkey][k]=(domainFreq[dkey][k]||0)+1; _persistFreq(); }
+function loadTaxonomy(){
+  if(!taxoLayer) return;
+  taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName IS NOT NULL", outFields:["CommonName","Species","Family"], returnGeometry:false, orderByFields:["CommonName"], num:2000}))
+    .then(r=>{
+      taxoRows=r.features.map(f=>f.attributes).filter(a=>a.CommonName);
+      taxoMap={}; taxoRows.forEach(a=>{ taxoMap[String(a.CommonName).toLowerCase()]={SPECIES2:a.Species, FAMILY:a.Family}; });
+      ['species'].forEach(id=>{const dl=document.getElementById(id); if(dl) dl.innerHTML=speciesOptions();});
+    }).catch(()=>{});
+}
+function pushRecent(arr,val){ if(val==null||val==='')return; const i=arr.findIndex(x=>String(x)===String(val)); if(i>=0)arr.splice(i,1); arr.unshift(val); if(arr.length>10)arr.length=10; }
+function bumpUse(map,val){ if(val==null||val==='')return; const k=String(val); map[k]=(map[k]||0)+1; }
+// record a used value: bumps its frequency and keeps it as the most-recent (for the new-tree default)
+function recordSpecies(v){ pushRecent(recentSpecies,v); bumpUse(speciesFreq,v); _persistFreq(); }
+function recordDbh(v){ pushRecent(recentDbh,v); bumpUse(dbhFreq,v); _persistFreq(); }
+function byFreqThenRecent(freq,recent){ return (a,b)=>{ const fa=freq[String(a)]||0, fb=freq[String(b)]||0; if(fb!==fa)return fb-fa; const ra=recent.indexOf(a), rb=recent.indexOf(b); return (ra<0?99:ra)-(rb<0?99:rb); }; }
+function speciesOptions(){
+  const names = taxoRows.length ? taxoRows.map(a=>a.CommonName) : Object.keys(DOMAINS.COMMON||{});
+  const used = names.filter(s=>speciesFreq[String(s)]).sort(byFreqThenRecent(speciesFreq,recentSpecies));
+  const seen={}; used.forEach(s=>seen[s]=1);
+  const rest = names.filter(s=>!seen[s]);   // taxonomy is already alphabetical
+  return used.concat(rest).map(c=>`<option value="${esc(c)}">`).join('');
+}
+function speciesDatalist(){ return speciesOptions(); }
+function dbhDatalist(){
+  const usedKeys = Object.keys(dbhFreq).map(Number).filter(n=>!isNaN(n)).sort(byFreqThenRecent(dbhFreq,recentDbh));
+  const seen={}; usedKeys.forEach(d=>seen[d]=1);
+  const rest=[]; for(let i=0;i<=249;i++){ if(!seen[i])rest.push(i); }
+  return usedKeys.concat(rest).map(d=>`<option value="${d}">`).join('');
+}
+// frequency-ordered arrays used by the custom picker
+function speciesList(){
+  const names = taxoRows.length ? taxoRows.map(a=>a.CommonName) : Object.keys(DOMAINS.COMMON||{});
+  const used = names.filter(s=>speciesFreq[String(s)]).sort(byFreqThenRecent(speciesFreq,recentSpecies));
+  const seen={}; used.forEach(s=>seen[s]=1);
+  return used.concat(names.filter(s=>!seen[s]));
+}
+function dbhList(){
+  const usedKeys = Object.keys(dbhFreq).map(Number).filter(n=>!isNaN(n)).sort(byFreqThenRecent(dbhFreq,recentDbh));
+  const seen={}; usedKeys.forEach(d=>seen[d]=1);
+  const rest=[]; for(let i=0;i<=249;i++){ if(!seen[i])rest.push(i); }
+  return usedKeys.concat(rest);
+}
+let pickState=null;
+// keep the picker sized to the visible area (above the keyboard) using the visual viewport
+function _syncPickerVH(){
+  var vv=window.visualViewport;
+  var hpx=vv?vv.height:window.innerHeight;
+  document.documentElement.style.setProperty('--vvh', hpx+'px');
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener('resize', _syncPickerVH);
+  window.visualViewport.addEventListener('scroll', _syncPickerVH);
+}
+function openPicker(cfg){
+  _syncPickerVH();
+  pickState=cfg;
+  document.getElementById('pickTitle').textContent=cfg.title;
+  const s=document.getElementById('pickSearch');
+  s.value=''; s.setAttribute('inputmode', cfg.numeric?'decimal':'text');
+  // for short tap-only lists (domain pickers) hide the search box and DON'T focus it,
+  // so the keyboard never pops up and covers the list
+  const wrap=document.querySelector('.picksearchwrap');
+  if(wrap) wrap.style.display = cfg.noSearch ? 'none' : '';
+  renderPickList();
+  document.getElementById('picker').classList.add('show');
+  if(!cfg.noAutoFocus){ setTimeout(()=>{try{s.focus();}catch(e){}},60); }
+  else { try{ s.blur(); }catch(e){} }
+}
+function renderPickList(){
+  if(!pickState)return;
+  const q=document.getElementById('pickSearch').value.trim(); const ql=q.toLowerCase();
+  const items=pickState.items;
+  const list = ql ? items.filter(x=>String(x).toLowerCase().indexOf(ql)>=0) : items;
+  const box=document.getElementById('pickList'); box.innerHTML='';
+  if(pickState.allowFree && q && !items.some(x=>String(x).toLowerCase()===ql)){
+    const d=document.createElement('div'); d.className='pickitem add'; d.textContent='Use \u201C'+q+'\u201D'; d.dataset.val=q; box.appendChild(d);
+  }
+  list.slice(0,400).forEach(x=>{ const d=document.createElement('div'); d.className='pickitem'+(String(x)===String(pickState.value)?' cur':''); d.textContent=x; d.dataset.val=x; box.appendChild(d); });
+  if(!box.children.length){ const e=document.createElement('div'); e.className='pickempty'; e.textContent='No matches — keep typing to add a new one'; box.appendChild(e); }
+}
+function pickChoose(v){ const st=pickState; pickClose(); if(st&&st.onPick)st.onPick(v); }
+// commit the typed value (Return key or ✓ Done). If the text exactly matches a list item, use that;
+// otherwise, for allowFree pickers (species/DBH/domains), accept the typed value as-is.
+function pickCommit(){
+  if(!pickState){ pickClose(); return; }
+  const q=(document.getElementById('pickSearch').value||'').trim();
+  if(q===''){ pickClose(); return; }            // nothing typed -> just close
+  const items=pickState.items||[];
+  const exact=items.find(x=>String(x).toLowerCase()===q.toLowerCase());
+  if(exact!=null){ pickChoose(exact); return; }
+  if(pickState.allowFree){ pickChoose(q); return; }   // accept a new typed value
+  // not free-form and no exact match: pick the first filtered result if any, else close
+  const first=items.find(x=>String(x).toLowerCase().indexOf(q.toLowerCase())>=0);
+  if(first!=null) pickChoose(first); else pickClose();
+}
+// Return key in the search box submits the typed value
+function pickKey(ev){ if(ev.key==='Enter'||ev.keyCode===13){ ev.preventDefault(); pickCommit(); } }
+function pickClose(){ document.getElementById('picker').classList.remove('show'); pickState=null; }
+function openSpeciesPicker(id, isEdit){ const before=gv(id); openPicker({title:'Species — common name', items:speciesList(), value:gv(id), allowFree:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnSpecies(id); if(isEdit && v && v!==before) onEditSpeciesReplaced(); }}); }
+// When the species is changed on the EDIT form, the tree has been replaced -> reset the new tree's
+// condition/defects to defaults, health to Good, clear DBH, treatment to No Treatment. Site location stays.
+function onEditSpeciesReplaced(){
+  try{
+    const setSel=(suffix,val)=>{ const el=document.getElementById('e_'+suffix); if(el){ el.value=val; markChanged(el); } };
+    const setPick=(suffix,code,label)=>{ const el=document.getElementById('e_'+suffix); if(el){ el.value=label; el.setAttribute('data-val',code); markChanged(el); } };
+    // health -> Good (fresh replacement)
+    const oh=document.getElementById('e_OVERHEAL'); if(oh){ oh.value='Good'; markChanged(oh); }
+    // clear DBH so it's re-entered for the new tree
+    const dbh=document.getElementById('e_DBH'); if(dbh){ dbh.value=''; dbh.removeAttribute('data-val'); markChanged(dbh); }
+    // defect fields -> defaults
+    setSel('STRUDEFE','No problem');
+    setSel('WOUNCANK','No problem');
+    setSel('DEADDECAY','NO PROBLEM (no visible problem)');
+    setSel('FAILPOTE','Low');
+    setPick('PESTDISEAS','None observed','None observed');
+    setPick('IMPEDMNT','None','None');
+    // treatment -> No Treatment ; site location intentionally LEFT unchanged
+    const rt=document.getElementById('e_RECOTREA'); if(rt){ rt.value='No Treatment'; markChanged(rt); }
+    // comments described the old tree -> clear
+    const cm=document.getElementById('e_COMMENTS'); if(cm){ cm.value=''; markChanged(cm); }
+    if(typeof toast==='function') toast('New species \u2014 condition reset for the replacement tree','ok');
+  }catch(e){ /* never block the form */ }
+}
+function openDbhPicker(id){ openPicker({title:'DBH (cm)', items:dbhList(), value:gv(id), allowFree:true, numeric:true, onPick:v=>{ const el=document.getElementById(id); if(el){el.value=v; markChanged(el);} autoOnDbh(id); }}); }
+(function(){ const l=document.getElementById('pickList'); if(l) l.addEventListener('click',e=>{ const it=e.target.closest('.pickitem'); if(it) pickChoose(it.dataset.val); });
+  const p=document.getElementById('picker'); if(p) p.addEventListener('click',e=>{ if(e.target.id==='picker') pickClose(); }); })();
+function gv(id){const el=document.getElementById(id);return el?el.value:'';}
+// value stored for a field: use the code kept in data-val when present (impediment codes ≠ labels), else the visible value
+function gvField(id){ const el=document.getElementById(id); if(!el)return ''; const dv=el.getAttribute('data-val'); return dv!=null?dv:el.value; }
+// treat null, empty, 'None', 'null' (any case) and whitespace as an unset value
+function isUnset(v){ if(v==null) return true; const s=String(v).trim().toLowerCase(); return s===''||s==='none'||s==='null'; }
+function domLabel(dkey, code){ const d=DOMAINS[dkey]||{}; if(code==null||code==='')return ''; return d[code]!=null?d[code]:String(code); }
+// picklist that lets the crew pick an existing value OR add a one-off value typed in the field
+function openDomainPicker(id, dkey, title){
+  const d=DOMAINS[dkey]||{};
+  let codes=Object.keys(d).filter(k=>k!=='Code');
+  // frequently-chosen values float to the top for faster entry; the rest keep their original order
+  const freq=domainFreq[dkey]||{};
+  const used=codes.filter(k=>freq[k]).sort((a,b)=>(freq[b]||0)-(freq[a]||0));
+  const seen={}; used.forEach(k=>seen[k]=1);
+  const rest=codes.filter(k=>!seen[k]);
+  codes=used.concat(rest);
+  const labels=codes.map(k=>d[k]);
+  const label2code={}; codes.forEach(k=>{ label2code[d[k]]=k; });
+  const el=document.getElementById(id);
+  const curCode=el?(el.getAttribute('data-val')||el.value):'';
+  const curLabel=(d[curCode]!=null?d[curCode]:curCode);
+  openPicker({title:title, items:labels, value:curLabel, allowFree:true, noAutoFocus:true, onPick:v=>{
+    const code=(label2code[v]!=null?label2code[v]:v);   // known label → its code; a typed value is stored as-is
+    if(el){ el.value=v; el.setAttribute('data-val', code); markChanged(el); }
+    recordDomainPick(dkey, code);   // remember for next time
+  }});
+}
+
+/* ------------- sheet ------------- */
+function openSheet(){
+  document.getElementById('scrim').classList.add('show');
+  const sh=document.getElementById('sheet'); sh.classList.add('up');
+  // always open at the very top (species/first field), not wherever the last form was scrolled
+  requestAnimationFrame(()=>{ const b=document.getElementById('shBody'); if(b)b.scrollTop=0; if(sh)sh.scrollTop=0; });
+}
+function closeSheet(){document.getElementById('scrim').classList.remove('show');document.getElementById('sheet').classList.remove('up');selectedGraphic=null;if(provisional){clearProvisional();if(addMode)toggleAdd();}}
+function setHead(e,t,s,c){document.getElementById('shEyebrow').textContent=e;document.getElementById('shTitle').textContent=t;document.getElementById('shSub').textContent=s||'';document.getElementById('shSpine').style.background=c||'#7A868E';}
+
+/* ------------- basemap ------------- */
+function cycleBase(){basemapToggleIdx=(basemapToggleIdx+1)%BASES.length;map.basemap=BASES[basemapToggleIdx];document.getElementById('btnBase').firstChild.textContent=['SAT','MAP','TOP'][basemapToggleIdx];document.getElementById('baseLbl').textContent=BASELBL[basemapToggleIdx];}
+
+/* ------------- add-tree ------------- */
+function toggleAdd(){
+  if(addMode){ // currently adding -> this tap cancels
+    addMode=false;
+    document.getElementById('fabAdd').classList.remove('arming');
+    document.getElementById('addLbl').textContent='Add tree';
+    document.getElementById('arm').classList.remove('show');
+    clearProvisional();
+    return;
+  }
+  // start adding: drop a point at the user's GPS location immediately, then open the form.
+  addMode=true;
+  const f=document.getElementById('fabAdd'); f.classList.add('arming');
+  document.getElementById('addLbl').textContent='Cancel';
+  followGps=false; const lb=document.getElementById('fabLoc'); if(lb) lb.classList.remove('following');
+
+  // Aim first: centre the map on GPS and show a crosshair. The MAP stays visible so the user can
+  // pan to fine-tune. The form opens only when they tap "Place here" (confirmPlacement).
+  const aimAt=(pt)=>{
+    view.goTo({target:pt, zoom:Math.max(view.zoom||19,19)}).catch(()=>{});
+    const xh=document.getElementById('xhair'); if(xh) xh.classList.add('show');
+    document.getElementById('arm').classList.add('show');   // shows "Place here" button
+  };
+  if(navigator.geolocation){
+    document.getElementById('addLbl').textContent='Locating…';
+    navigator.geolocation.getCurrentPosition(p=>{
+      lastGps=p.coords; drawGps(new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude}), p.coords.accuracy);
+      document.getElementById('addLbl').textContent='Cancel';
+      aimAt(new PointC({latitude:p.coords.latitude, longitude:p.coords.longitude}));
+    }, e=>{
+      document.getElementById('addLbl').textContent='Cancel';
+      const pt = lastGps ? new PointC({latitude:lastGps.latitude,longitude:lastGps.longitude})
+                         : (view.center.clone?view.center.clone():view.center);
+      aimAt(pt); toast('No GPS fix — pan the map to the tree','warn');
+    }, {enableHighAccuracy:true, timeout:8000, maximumAge:0});
+  } else {
+    aimAt(view.center.clone?view.center.clone():view.center);
+    toast('Location unavailable — pan the map to the tree','warn');
+  }
+}
+// ---- move an existing tree point ----
+let _movingTree=null;
+function startMoveTree(){
+  const g=selectedGraphic; if(!g||!g.geometry){ toast('No tree selected','warn'); return; }
+  _movingTree=g;
+  closeSheetKeepSelection();                 // hide the form but keep the selected tree
+  // centre the map on the tree and show the crosshair with a "Move here" button
+  view.goTo({target:g.geometry, zoom:Math.max(view.zoom||19,19)}).catch(()=>{});
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.add('show');
+  document.getElementById('armLbl').textContent='Pan so the crosshair is on the tree';
+  document.getElementById('armCenter').style.display='none';
+  document.getElementById('armMove').style.display='';
+  document.getElementById('arm').classList.add('show');
+  toast('Pan the map to move the point, then tap Move here','ok');
+}
+function confirmMove(){
+  const g=_movingTree; if(!g){ cancelMove(); return; }
+  const c=view.center.clone?view.center.clone():view.center;
+  g.geometry=c;
+  // recompute address / grid / UTM for the new location, then save the geometry
+  const btn=document.getElementById('armMove'); if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  Promise.resolve(computeGridXY(c).then(o=>Object.assign(g.attributes,{GRID:o.GRID,X:o.X,Y:o.Y})).catch(()=>{}))
+    .then(()=> lookupAddress(c).then(addr=>{ if(addr) g.attributes.ADDRESS=addr; }).catch(()=>{}))
+    .then(()=> applyEditsWithRetry(treeLayer, {updateFeatures:[g]}, 2))
+    .then(r=>{ if(r.updateFeatureResults&&r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
+      treeLayer.refresh(); toast('Tree point moved','ok'); endMoveMode(); openTree(g); })
+    .catch(err=>{ if(btn){ btn.disabled=false; btn.textContent='✓ Move here'; }
+      const msg=(err&&(err.message||err.name))||String(err);
+      if(/load failed|network|failed to fetch|timeout/i.test(msg)) toast('No connection — try Move here again','warn');
+      else toast('Move failed: '+msg,'err'); });
+}
+function cancelMove(){ endMoveMode(); if(_movingTree) openTree(_movingTree); }
+function endMoveMode(){
+  _movingTree=null;
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show');
+  document.getElementById('arm').classList.remove('show');
+  const m=document.getElementById('armMove'); if(m){ m.style.display='none'; m.disabled=false; m.textContent='✓ Move here'; }
+  const c=document.getElementById('armCenter'); if(c) c.style.display='';
+  document.getElementById('armLbl').textContent='Pan map to aim';
+}
+// close the sheet without clearing the selected tree (used when entering move mode)
+function closeSheetKeepSelection(){ document.getElementById('scrim').classList.remove('show'); document.getElementById('sheet').classList.remove('up'); }
+// user tapped "Place here": drop the point at the current map centre (the crosshair) and open the form
+function confirmPlacement(){
+  if(!view||!view.center) return;
+  const c=view.center.clone?view.center.clone():view.center;
+  const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show');
+  document.getElementById('arm').classList.remove('show');
+  placeProvisional(c);   // this drops the point AND opens the form
+}
+function clearProvisional(){if(_dragHandle){try{_dragHandle.remove();}catch(e){}_dragHandle=null;} if(_pinSettleT){clearTimeout(_pinSettleT);_pinSettleT=null;} const xh=document.getElementById('xhair'); if(xh) xh.classList.remove('show'); if(provisional){view.graphics.remove(provisional);provisional=null;}}
+// confirm placement at whatever the crosshair (map centre) is currently over, then open the form
+let _pinSettleT=null;
+function placeProvisional(pt){
+  clearProvisional();
+  provisional=new GraphicC({geometry:pt, symbol:{type:"simple-marker",color:cssv('--amber'),size:16,outline:{color:"#fff",width:2.5}}});
+  view.graphics.add(provisional);
+  openNewTree(pt);   // now open the form; location is already confirmed
+}
+function placeAtCenter(){ if(!view||!view.center)return; const c=view.center.clone?view.center.clone():view.center; placeProvisional(c); }
+/* nearest-parcel address lookup (mirrors the Field Maps parcel logic) */
+function lookupAddress(point){
+  if(!parcelLayer||!CONFIG.parcelAddressField) return Promise.resolve(null);
+  const F=CONFIG.parcelAddressField;
+  return parcelLayer.queryFeatures({geometry:point, spatialRelationship:"intersects", outFields:[F], returnGeometry:false, num:1})
+    .then(r=>{
+      if(r.features.length) return r.features[0].attributes[F];   // tree sits inside a parcel
+      // fallback: closest parcel within 60 m (e.g. boulevard trees in the ROW)
+      return parcelLayer.queryFeatures({geometry:point, distance:60, units:"meters", spatialRelationship:"intersects", outFields:[F], returnGeometry:true})
+        .then(r2=>{
+          if(!r2.features.length) return null;
+          let best=null,bd=Infinity;
+          r2.features.forEach(f=>{const c=f.geometry&&(f.geometry.centroid||f.geometry);if(c&&c.x!=null){const dx=c.x-point.x,dy=c.y-point.y,d=dx*dx+dy*dy;if(d<bd){bd=d;best=f;}}});
+          return best?best.attributes[F]:null;
+        });
+    }).catch(()=>null);
+}
+// park / open-space lookup: the polygon a new tree falls inside supplies its park name
+function lookupPark(point){
+  if(!parksLayer||!CONFIG.parkNameField) return Promise.resolve(null);
+  const F=CONFIG.parkNameField;
+  return parksLayer.queryFeatures({geometry:point, spatialRelationship:"intersects", outFields:[F], returnGeometry:false, num:1})
+    .then(r=>{ if(!r.features.length) return null; const v=r.features[0].attributes[F]; return (v==null||String(v).trim()==='')?null:String(v).trim(); })
+    .catch(()=>null);
+}
+// nearest-road lookup: roads are lines, so find the closest segment within streetMaxDist
+// true ground distance from a point to a line: nearest point on the line, then a geodesic measure.
+// (A planar measure in Web Mercator over-reports by ~40% at Aurora's latitude.)
+function geoDistToLine(pt, lineGeom){
+  try{
+    if(!geometryEngine||!lineGeom) return NaN;
+    const nc=geometryEngine.nearestCoordinate(lineGeom, pt);
+    const c=nc&&nc.coordinate; if(!c) return NaN;
+    if(PolylineC){
+      const seg=new PolylineC({paths:[[[pt.x,pt.y],[c.x,c.y]]], spatialReference:pt.spatialReference});
+      const g=geometryEngine.geodesicLength(seg,"meters");
+      if(isFinite(g)&&g>=0) return g;
+    }
+    return geometryEngine.distance(pt, lineGeom, "meters");
+  }catch(e){ return NaN; }
+}
+function lookupStreet(point){
+  if(!roadsLayer||!CONFIG.streetNameField) return Promise.resolve(null);
+  const F=CONFIG.streetNameField, D=CONFIG.streetMaxDist||60;
+  return roadsLayer.queryFeatures({geometry:point, distance:D, units:"meters", spatialRelationship:"intersects",
+      outFields:[F], returnGeometry:true})
+    .then(r=>{
+      if(!r.features.length) return null;
+      let best=null, bd=Infinity, bg=null;
+      r.features.forEach(f=>{
+        const nm=f.attributes[F]; if(nm==null||String(nm).trim()==='') return;
+        let d=Infinity;
+        try{ if(geometryEngine && f.geometry) d=geometryEngine.distance(point, f.geometry, "meters"); }catch(e){}
+        if(!isFinite(d)) d=0;
+        if(d<bd){ bd=d; best=String(nm).trim(); bg=f.geometry; }
+      });
+      if(!best) return null;
+      const g=geoDistToLine(point, bg);            // measure the winner geodesically
+      const m=isFinite(g)?g:(isFinite(bd)?bd:null);
+      return {name:best, dist:(m==null?null:Math.round(m*100)/100)};
+    }).catch(()=>null);
+}
+let pendingAddress='';
+function fillAddressFromParcel(point){
+  pendingAddress='';
+  lookupAddress(point).then(addr=>{ if(addr) pendingAddress=addr; const el=document.getElementById('n_ADDRESS'); if(el&&addr&&!el.value) el.value=addr; });
+  lookupPark(point).then(pk=>{ derived.PARKNAM=pk; renderAuto(); });
+  lookupStreet(point).then(s=>{ derived.STREET=s?s.name:null; derived.ROADDIST=s?s.dist:null; renderAuto(); });
+}
+/* ---- auto-populated / calculated fields ---- */
+function dbhDerived(dbh){
+  const d=parseFloat(dbh);
+  if(isNaN(d)||d<=0) return {HEIGHT:null,CROWNDIAM:null,AGECLASS:null};
+  return { HEIGHT:Math.round((2.62+0.314*d)*100)/100, CROWNDIAM:Math.round((1.68+0.202*d)*100)/100, AGECLASS:Math.ceil(d/10)*10 };
+}
+function taxoLookup(common){
+  if(!common) return Promise.resolve({});
+  const hit=taxoMap[String(common).toLowerCase()];
+  if(hit) return Promise.resolve(hit);
+  if(!taxoLayer) return Promise.resolve({});
+  return taxoLayer.load().then(()=>taxoLayer.queryFeatures({where:"CommonName = '"+String(common).replace(/'/g,"''")+"'", outFields:["Species","Family"], returnGeometry:false, num:1}))
+    .then(r=>{ if(!r.features.length) return {}; const a=r.features[0].attributes; return {SPECIES2:a.Species, FAMILY:a.Family}; })
+    .catch(()=>({}));
+}
+function computeGridXY(point){
+  const out={GRID:null,X:null,Y:null};
+  try{ if(projection&&point){ const utm=projection.project(point,new SpatialRef({wkid:CONFIG.utmWkid})); if(utm){ out.X=Math.round(utm.x*100)/100; out.Y=Math.round(utm.y*100)/100; } } }catch(e){}
+  const gp=(gridLayer? gridLayer.queryFeatures({geometry:point,spatialRelationship:"intersects",outFields:[CONFIG.gridLabelField],returnGeometry:false,num:1}).then(r=>r.features.length?r.features[0].attributes[CONFIG.gridLabelField]:null).catch(()=>null):Promise.resolve(null));
+  return gp.then(g=>{out.GRID=g;return out;});
+}
+function nextTreeNum(){
+  if(!treeLayer||!treeLayer.queryFeatures) return Promise.resolve(null);
+  return treeLayer.queryFeatures({where:"1=1",outStatistics:[{statisticType:"max",onStatisticField:"TREENUM_NEW",outStatisticFieldName:"mx"}],returnGeometry:false})
+    .then(r=>{const mx=r.features.length?r.features[0].attributes.mx:0;return (mx||0)+1;}).catch(()=>null);
+}
+function renderAuto(){
+  // Auto-filled values are computed and saved, but intentionally NOT shown in the form —
+  // hiding them keeps the whole form on one screen and reduces scrolling for field crews.
+  const el=document.getElementById('autoPanel'); if(el) el.innerHTML='';
+}
+// mark a form cell as user-modified (turns it pink) -------------------------------------------
+function markChanged(id){ const el=(typeof id==='string')?document.getElementById(id):id; if(el) el.classList.add('changed'); }
+function clearChanged(scope){ (scope||document).querySelectorAll('.field .changed').forEach(el=>el.classList.remove('changed')); }
+// tag every edit inside the tree sheet: typed inputs/selects/textareas fire 'input'/'change'
+(function(){
+  document.addEventListener('input', e=>{ const el=e.target; if(el && el.closest && el.closest('#sheet .field')) markChanged(el); }, true);
+  document.addEventListener('change', e=>{ const el=e.target; if(el && el.closest && el.closest('#sheet .field')) markChanged(el); }, true);
+})();
+function autoOnDbh(id){ Object.assign(derived, dbhDerived(gv(id))); renderAuto(); }
+function autoOnSpecies(id){ taxoLookup(gv(id)).then(t=>{Object.assign(derived,t); renderAuto();}); }
+
+/* ------------- locate ------------- */
+function startTracking(){
+  if(!navigator.geolocation){toast('Location not available on this device','warn');return false;}
+  if(gpsWatch!=null) return true;
+  gpsWatch=navigator.geolocation.watchPosition(
+    p=>{ lastGps=p.coords; const pt=new PointC({latitude:p.coords.latitude,longitude:p.coords.longitude});
+         drawGps(pt, p.coords.accuracy);
+         if(followGps && view && !addMode){ view.goTo({target:pt}, {duration:250, easing:"ease-out"}).catch(()=>{}); } },
+    e=>{ if(e&&e.code===1) toast('Location blocked — enable it in browser settings','warn'); },
+    {enableHighAccuracy:true, maximumAge:2000, timeout:12000});
+  return true;
+}
+function drawGps(pt, acc){
+  // accuracy ring (under the dot)
+  if(gpsRing){ view.graphics.remove(gpsRing); gpsRing=null; }
+  if(geometryEngine && acc){ try{
+    const circle=geometryEngine.geodesicBuffer(pt, acc, "meters");
+    gpsRing=new GraphicC({geometry:circle, symbol:{type:"simple-fill", color:[33,150,243,0.12], outline:{color:[33,150,243,0.45], width:1}}});
+    view.graphics.add(gpsRing);
+  }catch(e){} }
+  // blue location dot (kept on top)
+  if(gpsGraphic) view.graphics.remove(gpsGraphic);
+  gpsGraphic=new GraphicC({geometry:pt, symbol:{type:"simple-marker", color:[33,150,243,1], size:12, outline:{color:"#fff", width:2.5}}});
+  view.graphics.add(gpsGraphic);
+}
+function locate(){
+  if(!startTracking()) return;
+  followGps=true; _userPanned=false;              // resume auto-follow
+  const lb=document.getElementById('fabLoc'); if(lb) lb.classList.add('following');
+  toast('Locating…');
+  navigator.geolocation.getCurrentPosition(p=>{
+    lastGps=p.coords;
+    const pt=new PointC({latitude:p.coords.latitude, longitude:p.coords.longitude});
+    drawGps(pt, p.coords.accuracy);
+    view.goTo({target:pt, zoom:19}).catch(()=>{});
+    toast('Your location · \u00b1'+Math.round(p.coords.accuracy)+' m','ok');
+  }, e=>toast(e&&e.code===1?'Location blocked in browser settings':'Could not get a fix — try again','warn'),
+  {enableHighAccuracy:true, timeout:9000, maximumAge:0});
+}
+function placeAtGps(){
+  if(!navigator.geolocation){toast('Location not available','warn');return;}
+  startTracking();
+  const btn=document.getElementById('armGps'); if(btn){btn.disabled=true; btn.textContent='📍 Getting fix…';}
+  navigator.geolocation.getCurrentPosition(p=>{
+    if(btn){btn.disabled=false; btn.textContent='📍 Use my GPS location';}
+    const pt=new PointC({latitude:p.coords.latitude, longitude:p.coords.longitude});
+    drawGps(pt, p.coords.accuracy);
+    view.goTo({target:pt, zoom:20}).catch(()=>{});
+    if(!addMode) toggleAdd();
+    placeProvisional(pt);
+    toast('Tree placed at your location · \u00b1'+Math.round(p.coords.accuracy)+' m','ok');
+  }, e=>{ if(btn){btn.disabled=false; btn.textContent='📍 Use my GPS location';} toast(e&&e.code===1?'Location blocked — tap the map instead':'No GPS fix — tap the map instead','warn'); },
+  {enableHighAccuracy:true, timeout:12000, maximumAge:0});
+}
+
+/* ------------- toast ------------- */
+let toastT;function toast(m,k){const el=document.getElementById('toast');const c=k==='ok'?cssv('--good'):k==='warn'?cssv('--amber'):k==='err'?cssv('--dead'):cssv('--muted');el.innerHTML=`<span class="tdot" style="background:${c}"></span>${m}`;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2800);}
+
+/* ------------- TREE detail ------------- */
+function openTree(g){
+  if(addMode)toggleAdd();
+  if(g.attributes&&g.attributes.GlobalID&&_pendingEdits[g.attributes.GlobalID]){ g.attributes=Object.assign({}, g.attributes, _pendingEdits[g.attributes.GlobalID]); }
+  selectedGraphic=g; const a=g.attributes; const gid=a.GlobalID;
+  const color=healthColor(a.OVERHEAL);
+  const label=val(a.COMMON)!=='—'?a.COMMON:(val(a.SPECIES)!=='—'?a.SPECIES:'Unlabeled tree');
+  const inv=lastInvDate(a);
+  setHead('TREE · CURRENT STATE',label,[val(a.SPECIES),val(a.ADDRESS),inv!=='—'?('Last inspected '+inv):''].filter(x=>x&&x!=='—').join(' · '),color);
+  if(g.geometry) view.goTo({target:g.geometry},{duration:400}).catch(()=>{});
+  const A=(k,v,full)=>`<div class="attr${full?' full':''}"><div class="k">${k}</div><div class="v">${esc(val(v))}</div></div>`;
+  document.getElementById('shBody').innerHTML=`
+    <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="chip"><span class="dot" style="background:${color}"></span>${esc(val(a.OVERHEAL))}</span><span class="chip" id="lastInspChip" style="background:rgba(255,177,0,.14);color:var(--amber)">🗓 Last inspected ${inv}</span></div>
+    <div class="attrs">
+      ${A('Species (common)',a.COMMON)}${A('DBH (cm)',a.DBH)}${A('Height (m)',a.HEIGHT)}${A('Site',a.SITELOCA)}
+      ${A('Structural',a.STRUDEFE)}${A('Wound / canker',a.WOUNCANK)}${A('Dead / decay',a.DEADDECAY)}${A('Fail potential',a.FAILPOTE)}${A('Pest / disease',a.PESTDISEAS)}${A('Recommended',a.RECOTREA)}
+      ${val(a.ADDRESS)!=='—'?A('Address',a.ADDRESS,true):''}${val(a.COMMENTS)!=='—'?A('Comments',a.COMMENTS,true):''}
+    </div>
+    <div id="treePhotos"></div>
+    <div class="twobtn">
+      <button class="bigact edit" onclick="openEditTree()"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16v4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Edit tree</button>
+      <button class="bigact log" onclick="openInspection()"><svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4M4 6h16M4 18h16M4 12h3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>New log</button>
+    </div>
+    <div class="slabel">Activity log</div>
+    <div id="histBox"><div class="empty">Loading inspections…</div></div>`;
+  openSheet();
+  loadHistory(gid);
+  showAttachments(treeLayer, treeLayer&&a[treeLayer.objectIdField], 'treePhotos', 'Tree photos');
+  // rendered map features may not carry every field — fetch the full record, explicitly naming DATE
+  const _oid = treeLayer && a[treeLayer.objectIdField];
+  if(_oid!=null){ treeLayer.queryFeatures({objectIds:[_oid], outFields:["*"], returnGeometry:false}).then(r=>{
+    if(!r.features.length) return; const fa=r.features[0].attributes; Object.assign(g.attributes, fa);
+    const chip=document.getElementById('lastInspChip'); if(chip) chip.textContent='🗓 Last inspected '+lastInvDate(fa);
+  }).catch(()=>{}); }
+}
+let histCache=[];
+function loadHistory(gid){
+  inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}'`, outFields:["*"], returnGeometry:false, orderByFields:["inspection_date DESC"]})
+    .then(res=>{
+      const box=document.getElementById('histBox'); if(!box)return;
+      histCache=res.features.map(f=>f.attributes);
+      if(!res.features.length){box.innerHTML='<div class="empty">No inspections recorded for this tree yet.</div>';return;}
+      box.innerHTML=res.features.map((f,i)=>inspRow(f.attributes,'synced',i)).join('');
+    }).catch(()=>{const box=document.getElementById('histBox');if(box)box.innerHTML='<div class="empty">Could not load history (offline?).</div>';});
+}
+function inspRow(i,status,idx){
+  const c=healthColor(i.condition_at_inspection);
+  const pill=status==='queued'?'<span class="pill queued">Queued</span>':'<span class="pill synced">Synced</span>';
+  const meta=[i.inspector_name,i.condition_at_inspection&&('Cond: '+i.condition_at_inspection),i.recommendations&&('→ '+i.recommendations),i.maintenance_notes].filter(Boolean).join(' · ');
+  const click = (idx!=null)?` style="cursor:pointer" onclick="viewInsp(${idx})"`:'';
+  const chev = (idx!=null)?' ›':'';
+  return `<div class="insp"${click}><div class="spine" style="background:${c}"></div><div class="body"><div class="row1"><div class="act">${esc(i.activity_type||'Activity')}${pill}</div><div class="date">${esc(fmtDate(logDate(i)))}${chev}</div></div><div class="meta">${esc(meta||'—')}</div></div></div>`;
+}
+function viewInsp(idx){
+  const i=histCache[idx]; if(!i)return;
+  const c=healthColor(i.condition_at_inspection);
+  setHead('LOG RECORD',i.activity_type||'Activity',fmtDate(logDate(i))+' · '+val(i.inspector_name),c);
+  const A=(k,v)=>val(v)==='—'?'':`<div class="attr"><div class="k">${k}</div><div class="v">${esc(val(v))}</div></div>`;
+  const isAssess=(i.activity_type==='Inspection'||i.activity_type==='Planted');
+  document.getElementById('shBody').innerHTML=`
+    <div class="attrs" style="margin-top:12px">
+      ${A('Activity',i.activity_type)}${A('Inspector',i.inspector_name)}${A('Date',fmtDate(logDate(i)))}
+      ${isAssess?A('Condition',i.condition_at_inspection):''}${isAssess?A('Structural',i.Structdefe_at_inspection):''}
+      ${isAssess?A('Wound / canker',i.Woundcank_at_inspection):''}${isAssess?A('Dead / decay',i.Deaddecay_at_inspection):''}
+      ${isAssess?A('Failure potential',i.Failpote_at_inspection):''}${isAssess?A('Pest / disease',i.Pestdisease_at_inspection):''}
+      ${isAssess?A('Impediment',i.Impediment_at_inspection):''}${isAssess?A('DBH',i.DBH):''}${isAssess?A('Recommended',i.recommendations):''}
+      ${i.maintenance_notes?`<div class="attr full"><div class="k">Notes</div><div class="v">${esc(i.maintenance_notes)}</div></div>`:'<div class="attr full"><div class="k">Notes</div><div class="v">—</div></div>'}
+    </div>
+    <div id="inspPhotos"></div>
+    <div class="twobtn" style="margin-top:14px">
+      <button class="bigact log" onclick="editInsp(${idx})"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16v4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Edit log</button>
+      <button class="bigact" style="background:rgba(208,64,43,.14);color:var(--dead)" onclick="deleteInsp(${idx})"><svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M9 7V5h6v2M7 7l1 13h8l1-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Delete log</button>
+    </div>
+    <div class="actions"><button class="btn ghost" style="width:100%" onclick="openTree(selectedGraphic)">Back to tree</button></div>`;
+  openSheet();
+  showAttachments(inspLayer, i[inspLayer.objectIdField], 'inspPhotos', 'Photos');
+}
+function deleteInsp(idx){
+  const i=histCache[idx]; if(!i)return;
+  confirmDialog('Delete this log?','This permanently removes this activity-log record and its photos. This cannot be undone.','Delete log',()=>{
+    const oid=i[inspLayer.objectIdField];
+    const feature=new GraphicC({attributes:{[inspLayer.objectIdField]:oid}});
+    // delete this log's own photos first (in case the service does not cascade), then the record
+    inspLayer.queryAttachments({objectIds:[oid]}).then(mapp=>{
+      const atts=(mapp&&mapp[oid])||[];
+      const ids=atts.map(a=>a.id);
+      return ids.length ? inspLayer.deleteAttachments(feature, ids).catch(()=>{}) : null;
+    }).catch(()=>{}).then(()=>{
+      return inspLayer.applyEdits({deleteFeatures:[{objectId:oid}]});
+    }).then(r=>{
+      if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
+      toast('Log and its photos deleted','ok'); openTree(selectedGraphic);
+    }).catch(err=>toast('Delete failed: '+((err&&err.message)||err),'err'));
+  });
+}
+function editInsp(idx){
+  const i=histCache[idx]; if(!i){return;}
+  openInspection(selectedGraphic, i.activity_type, i);
+}
+
+/* ------------- EDIT tree ------------- */
+function openEditTree(){
+  const g=selectedGraphic; if(!g)return; const a=g.attributes; editPhotoFiles=[];
+  capturePreEdit(a);
+  derived={SPECIES2:a.SPECIES2, FAMILY:a.FAMILY, HEIGHT:a.HEIGHT, CROWNDIAM:a.CROWNDIAM, AGECLASS:a.AGECLASS, GRID:a.GRID, X:a.X, Y:a.Y};
+  setHead('TREE · EDIT CURRENT STATE',val(a.COMMON)!=='—'?a.COMMON:'Tree','Overwrites the persistent tree record',healthColor(a.OVERHEAL));
+  document.getElementById('shBody').innerHTML=`
+    <div class="photoblock"><label class="photobtn" id="e_photowrap"><input type="file" accept="image/*" capture="environment" id="e_photo" onchange="onEditPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="e_photolib" onchange="onEditPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('e_photolib').click()">or attach from library</div><div id="e_photoprev" class="photogrid"></div></div>
+    <div class="field"><label>Species — common name</label><input readonly class="pickfield" id="e_COMMON" value="${esc(a.COMMON==='None'?'':a.COMMON||'')}" placeholder="Tap to choose species" onclick="openSpeciesPicker('e_COMMON',true)"></div>
+    <div class="field"><label>DBH (cm)</label><input readonly class="pickfield" id="e_DBH" value="${esc(a.DBH??'')}" placeholder="Tap to choose DBH" onclick="openDbhPicker('e_DBH')"></div>
+    <div class="field"><label>Overall health</label><select id="e_OVERHEAL" onchange="onHealthChange('e')">${options('OVERHEAL',a.OVERHEAL,true)}</select></div>
+    <div class="field"><label>Site location</label><select id="e_SITELOCA">${options('SITELOCA',a.SITELOCA,true)}</select></div>
+    <div class="frow"><div class="field"><label>Structural</label><select id="e_STRUDEFE">${options('STRUDEFE',a.STRUDEFE,true)}</select></div><div class="field"><label>Failure potential</label><select id="e_FAILPOTE">${options('FAILPOTE',a.FAILPOTE,true)}</select></div></div>
+    <div class="frow"><div class="field"><label>Wound / canker</label><select id="e_WOUNCANK">${options('WOUNCANK',a.WOUNCANK,true)}</select></div><div class="field"><label>Deadwood / decay</label><select id="e_DEADDECAY">${options('DEADDECAY',a.DEADDECAY,true)}</select></div></div>
+    <div class="field"><label>Pest / disease</label><input readonly class="pickfield" id="e_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('e_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><label>Impediment</label><input readonly class="pickfield" id="e_IMPEDMNT" value="${esc(domLabel('IMPEDMNT',a.IMPEDMNT))}" data-val="${esc(a.IMPEDMNT==null?'':a.IMPEDMNT)}" placeholder="Tap to choose or add" onclick="openDomainPicker('e_IMPEDMNT','IMPEDMNT','Impediment')"></div>
+    <div class="field"><label>Recommended treatment</label><select id="e_RECOTREA">${options('RECOTREA',a.RECOTREA,true)}</select></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Comments (persistent)<button type="button" class="clearbtn" onclick="clearComments()">✕ Clear</button></div><textarea id="e_COMMENTS">${esc(a.COMMENTS==='None'?'':a.COMMENTS||'')}</textarea></div>
+    
+    <div id="autoPanel"></div>
+    <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn brand" id="e_save" onclick="saveTree()">Save tree</button></div>
+    <button class="btn ghost" style="width:100%;margin-top:10px" onclick="startMoveTree()">✛ Move tree point</button>
+    <button class="btn danger" style="width:100%;margin-top:10px" onclick="deleteTree()">Delete this tree</button>`;
+  openSheet();
+  renderAuto();
+  if(g.geometry) computeGridXY(g.geometry).then(o=>{Object.assign(derived,o);renderAuto();});
+  // rendered features may omit SPECIES2/CROWNDIAM/HEIGHT — fetch the full record and refresh the preview
+  const _oid = treeLayer && a[treeLayer.objectIdField];
+  if(_oid!=null){ treeLayer.queryFeatures({objectIds:[_oid], outFields:["*"], returnGeometry:false}).then(r=>{
+    if(!r.features.length) return; const fa=r.features[0].attributes; Object.assign(g.attributes, fa);
+    capturePreEdit(fa);
+    Object.assign(derived, {SPECIES2:fa.SPECIES2, FAMILY:fa.FAMILY, HEIGHT:fa.HEIGHT, CROWNDIAM:fa.CROWNDIAM, AGECLASS:fa.AGECLASS});
+    renderAuto();
+  }).catch(()=>{}); }
+}
+function deleteTree(){
+  const g=selectedGraphic; if(!g)return;
+  const gid=g.attributes.GlobalID;
+  confirmDialog('Delete this tree?','This permanently removes the tree AND all of its activity-log records. This cannot be undone.','Delete tree',()=>{
+    // 1) find and delete the related inspection records first, so none are left orphaned
+    const findLogs = gid
+      ? inspLayer.queryFeatures({where:`${CONFIG.fkField} = '${gid}'`, outFields:[inspLayer.objectIdField], returnGeometry:false})
+          .then(res=>res.features.map(f=>({objectId:f.attributes[inspLayer.objectIdField]})))
+          .catch(()=>[])
+      : Promise.resolve([]);
+    findLogs.then(logDels=>{
+      const step = logDels.length
+        ? inspLayer.applyEdits({deleteFeatures:logDels}).catch(()=>{})   // best-effort; don't block the tree delete
+        : Promise.resolve();
+      return step.then(()=>logDels.length);
+    }).then(nLogs=>{
+      // 2) delete the tree point itself
+      return treeLayer.applyEdits({deleteFeatures:[g]}).then(r=>{
+        if(r.deleteFeatureResults[0].error) throw r.deleteFeatureResults[0].error;
+        treeLayer.refresh(); treeLayer.queryFeatureCount().then(n=>{const el=document.getElementById('rTrees');if(el)el.textContent=n;});
+        toast(nLogs? ('Tree and '+nLogs+' log record(s) deleted') : 'Tree deleted','ok'); closeSheet();
+      });
+    }).catch(err=>toast('Delete failed: '+(err.message||err),'err'));
+  });
+}
+let _preEdit=null;
+// tracks the most recent inspection log this app wrote for each tree THIS SESSION, so a same-session
+// correction can be detected reliably without depending on the service's CreationDate field.
+// key = tree GlobalID -> { oid, ms, record }
+const _sessionLogs={};
+function noteSessionLog(gid, oid, record){ if(gid==null) return; _sessionLogs[String(gid)]={ oid:oid, ms:Date.now(), record:record||null }; }
+function rawTreeDate(a){ let v=a[treeDateField]; if(v==null||v===''){ v=(a.DATE!=null&&a.DATE!=='')?a.DATE:null; } if(v==null||v===''){ for(const k in a){ if(k.toLowerCase()==='date'&&a[k]!=null&&a[k]!==''){v=a[k];break;} } } return v; }
+function capturePreEdit(a){
+  _preEdit={ OVERHEAL:a.OVERHEAL, STRUDEFE:a.STRUDEFE, WOUNCANK:a.WOUNCANK, DEADDECAY:a.DEADDECAY,
+    FAILPOTE:a.FAILPOTE, PESTDISEAS:a.PESTDISEAS, IMPEDMNT:a.IMPEDMNT, DBH:a.DBH, COMMON:a.COMMON,
+    RECOTREA:a.RECOTREA, INSPECTR:a.INSPECTR, oldDate:rawTreeDate(a) };
+}
+// carry the tree's pre-edit state into the log as a dated "prior" inspection, so nothing is lost when the tree record is overwritten
+// How recent a prior inspection must be for an edit to count as a CORRECTION (not a re-inspection).
+const CORRECTION_WINDOW_MS = 60*60*1000;   // 60 minutes
+// Decide whether this edit is a same-session correction. If so, UPDATE the existing recent
+// inspection to the corrected values (no new record). If it's a genuine later re-inspection,
+// carry the pre-edit state forward as a dated prior record (history). Returns a Promise<'correction'|'reinspection'>.
+function correctionRecordFrom(last, g){
+  const rec=Object.assign({}, last);
+  rec.condition_at_inspection=g.attributes.OVERHEAL; rec.Structdefe_at_inspection=g.attributes.STRUDEFE;
+  rec.Woundcank_at_inspection=g.attributes.WOUNCANK; rec.Deaddecay_at_inspection=g.attributes.DEADDECAY;
+  rec.Failpote_at_inspection=g.attributes.FAILPOTE; rec.Pestdisease_at_inspection=g.attributes.PESTDISEAS;
+  rec.Impediment_at_inspection=g.attributes.IMPEDMNT; rec.DBH=(g.attributes.DBH!=null?g.attributes.DBH:null);
+  rec.recommendations=g.attributes.RECOTREA; rec.Species=g.attributes.COMMON;
+  return rec;
+}
+function writePriorLog(g){
+  // SAVE-FIRST / offline-safe: decide correction vs re-inspection from LOCAL session state only.
+  // No server query or live write here — any carry-forward log is queued like everything else.
+  if(!_preEdit || !g || !inspLayer) return Promise.resolve({kind:'reinspection'});
+  const gid=g.attributes.GlobalID;
+  const s=_sessionLogs[String(gid)];
+  if(s && (Date.now()-s.ms) <= CORRECTION_WINDOW_MS){
+    const base = s.record || {}; if(s.oid!=null) base[inspLayer.objectIdField]=s.oid;
+    return Promise.resolve({kind:'correction', record:correctionRecordFrom(base, g)});
+  }
+  const oldDate=_preEdit.oldDate;
+  if(oldDate!=null && oldDate!==''){
+    const attrs={};
+    attrs[CONFIG.fkField]=gid; attrs.activity_type='Inspection';
+    attrs.inspector_name=_preEdit.INSPECTR||currentInspector||'';
+    attrs.inspection_date=oldDate; attrs.ACTIVITY_DATE=oldDate;
+    attrs.condition_at_inspection=_preEdit.OVERHEAL; attrs.Structdefe_at_inspection=_preEdit.STRUDEFE;
+    attrs.Woundcank_at_inspection=_preEdit.WOUNCANK; attrs.Deaddecay_at_inspection=_preEdit.DEADDECAY;
+    attrs.Failpote_at_inspection=_preEdit.FAILPOTE; attrs.Pestdisease_at_inspection=_preEdit.PESTDISEAS;
+    attrs.Impediment_at_inspection=_preEdit.IMPEDMNT; attrs.DBH=(_preEdit.DBH!=null?_preEdit.DBH:null);
+    attrs.recommendations=_preEdit.RECOTREA; attrs.Species=_preEdit.COMMON;
+    attrs.maintenance_notes='Prior recorded state, carried forward automatically before the '+today()+' update.';
+    try{ queueJob('log', {attributes:attrs, photos:[], treeOid:(g.attributes[treeLayer.objectIdField]!=null?g.attributes[treeLayer.objectIdField]:null)}); }catch(e){}
+  }
+  return Promise.resolve({kind:'reinspection'});
+}
+// When a tree is Removed / Dead / Stump / Stump carving, its defect ratings are no longer
+// meaningful. Clear them to their blank/none value. Species, Site location and Comments are kept.
+const NON_LIVING_CONDITIONS = ['Removed','Dead','Stump','Stump carving'];
+function onHealthChange(prefix){
+  try{
+    const sel=document.getElementById(prefix+'_OVERHEAL');
+    const h=sel?sel.value:'';
+    if(NON_LIVING_CONDITIONS.indexOf(h)<0) return;   // living tree: leave everything as-is
+    const setSel=(suffix,val)=>{ const el=document.getElementById(prefix+'_'+suffix); if(el){ const blankable=Array.from(el.options||[]).some(o=>o.value===''); el.value=blankable?'':val; markChanged(el); } };
+    const setPick=(suffix,code,label)=>{ const el=document.getElementById(prefix+'_'+suffix); if(el){ el.value=label; el.setAttribute('data-val',code); markChanged(el); } };
+    // DBH is intentionally KEPT (size is useful even after removal)
+    setSel('STRUDEFE','No problem');
+    setSel('WOUNCANK','No problem');
+    setSel('DEADDECAY','NO PROBLEM (no visible problem)');
+    setSel('FAILPOTE','Low');
+    setPick('PESTDISEAS','None observed','None observed');
+    setPick('IMPEDMNT','None','None');
+    // Recommended treatment: set explicitly to "No Treatment" (not blank)
+    const rt=document.getElementById(prefix+'_RECOTREA'); if(rt){ rt.value='No Treatment'; markChanged(rt); }
+    // Comments describe the living tree — clear them for a removed/stump record
+    const cm=document.getElementById(prefix+'_COMMENTS'); if(cm){ cm.value=''; markChanged(cm); }
+    if(typeof toast==='function') toast('Defect fields and comments cleared for a non-living tree','ok');
+  }catch(e){ /* never let this block the form */ }
+}
+function clearComments(id){ const t=document.getElementById(id||'e_COMMENTS'); if(t){ t.value=''; if(typeof markChanged==='function') markChanged(t); t.focus(); } }
+function saveTree(){
+  const g=selectedGraphic; if(!g)return;
+  ['COMMON','OVERHEAL','SITELOCA','STRUDEFE','WOUNCANK','DEADDECAY','FAILPOTE','RECOTREA','COMMENTS'].forEach(k=>g.attributes[k]=gv('e_'+k));
+  g.attributes.PESTDISEAS=gvField('e_PESTDISEAS');
+  g.attributes.IMPEDMNT=gvField('e_IMPEDMNT');
+  g.attributes.DBH=gv('e_DBH')===''?null:parseFloat(gv('e_DBH'));
+  Object.assign(derived, dbhDerived(gv('e_DBH')));
+  recordSpecies(gv('e_COMMON')); if(gv('e_DBH')!=='') recordDbh(parseFloat(gv('e_DBH')));
+  const btn=document.getElementById('e_save'); if(btn){btn.disabled=true; btn.textContent='Saving…';}
+  Promise.resolve(taxoLookup(gv('e_COMMON')).then(t=>Object.assign(derived,t))).then(()=>{
+    Object.assign(g.attributes, {HEIGHT:derived.HEIGHT, CROWNDIAM:derived.CROWNDIAM, AGECLASS:derived.AGECLASS,
+      SPECIES2:derived.SPECIES2, FAMILY:derived.FAMILY, GRID:derived.GRID, X:derived.X, Y:derived.Y});
+    // stamp the inspection date to today so the tree shows "last inspected today", appears in the
+    // today filter, and drops out of the yellow "not visited" highlight. Set BOTH date fields —
+    // exactly like the new-tree save does (which is why new trees already show correctly).
+    g.attributes.DATE_NEW=Date.now();
+    g.attributes.DATE_=Date.now();
+    if(treeDateField && treeDateField!=='DATE_NEW' && treeDateField!=='DATE_') g.attributes[treeDateField]=Date.now();
+    g.attributes.INSPECTR=currentInspector||g.attributes.INSPECTR||null;
+    // SAVE-FIRST: queue the tree edit (with photos) on the device, then upload in the background.
+    const toid=g.attributes[treeLayer.objectIdField];
+    const editPhotos=photosToRecords(editPhotoFiles.slice()); editPhotoFiles=[];
+    applyPendingEdit(g.attributes&&g.attributes.GlobalID, g.attributes);   // show latest values locally until uploaded
+    queueJob('tree-edit', {attributes:g.attributes, oid:(toid!=null?toid:null), photos:editPhotos}).then(()=>{
+      if(btn){btn.disabled=false; btn.textContent='Save tree';}
+      treeLayer.refresh(); markTreeVisitedLocally(g.attributes&&g.attributes.GlobalID);
+      rememberLastTree(g.attributes);
+      flushQueue();
+      // continue into the inspection note (its log is also save-first)
+      writePriorLog(g).then(result=>{
+        const kind=result&&result.kind;
+        if(kind==='correction' && result.record){
+          toast('Correcting the existing log','ok');
+          openInspection(g,'Inspection',result.record,true);
+        } else {
+          toast('Tree saved on device — add your inspection note','ok');
+          openInspection(g,'Inspection');
+        }
+      });
+    }).catch(err=>{ if(btn){btn.disabled=false; btn.textContent='Save tree';} toast('Could not save on device: '+((err&&err.message)||err),'err'); });
+  });
+}
+
+/* ------------- NEW tree ------------- */
+function openNewTree(pt){
+  derived={}; newPhotoFiles=[];
+  setHead('TREE · NEW PLANTING / RECORD','New tree',`${pt.latitude.toFixed(5)}, ${pt.longitude.toFixed(5)}`,cssv('--amber'));
+  document.getElementById('shBody').innerHTML=`
+    ${lastTreeAttrs?`<button class="btn brand" style="width:100%;margin:8px 0 4px" onclick="fillFromLastTree()">⧉ Same as last tree${lastTreeAttrs.COMMON?(' · '+esc(lastTreeAttrs.COMMON)):''}</button><div class="hint" style="margin:-2px 0 10px">Copies species, size, condition &amp; defects from the last tree. Location, photo &amp; notes stay blank.</div>`:''}
+    <div class="photoblock"><label class="photobtn" id="n_photowrap"><input type="file" accept="image/*" capture="environment" id="n_photo" onchange="onNewPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="n_photolib" onchange="onNewPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('n_photolib').click()">or attach from library</div><div id="n_photoprev" class="photogrid"></div></div>
+    <div class="field" style="margin-top:8px"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Species — common name <span class="req">*</span><button type="button" class="prevbtn" onclick="sameAsPrev('COMMON')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_COMMON" value="" placeholder="Tap to choose species" onclick="openSpeciesPicker('n_COMMON')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">DBH (cm)<button type="button" class="prevbtn" onclick="sameAsPrev('DBH')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_DBH" placeholder="Tap to choose DBH" onclick="openDbhPicker('n_DBH')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Overall health<button type="button" class="prevbtn" onclick="sameAsPrev('OVERHEAL')" title="Use previous tree’s value">↩ prev</button></div><select id="n_OVERHEAL" onchange="onHealthChange('n')">${options('OVERHEAL','Good',false)}</select></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Site location<button type="button" class="prevbtn" onclick="sameAsPrev('SITELOCA')" title="Use previous tree’s value">↩ prev</button></div><select id="n_SITELOCA">${options('SITELOCA','Boulevard',false)}</select></div>
+    <div class="slabel">Condition &amp; defect assessment</div>
+    <div class="frow"><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Structural<button type="button" class="prevbtn" onclick="sameAsPrev('STRUDEFE')" title="Use previous tree’s value">↩ prev</button></div><select id="n_STRUDEFE">${options('STRUDEFE','No problem',false)}</select></div><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Wound / canker<button type="button" class="prevbtn" onclick="sameAsPrev('WOUNCANK')" title="Use previous tree’s value">↩ prev</button></div><select id="n_WOUNCANK">${options('WOUNCANK','No problem',false)}</select></div></div>
+    <div class="frow"><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Dead / decay<button type="button" class="prevbtn" onclick="sameAsPrev('DEADDECAY')" title="Use previous tree’s value">↩ prev</button></div><select id="n_DEADDECAY">${options('DEADDECAY','NO PROBLEM (no visible problem)',false)}</select></div><div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Failure potential<button type="button" class="prevbtn" onclick="sameAsPrev('FAILPOTE')" title="Use previous tree’s value">↩ prev</button></div><select id="n_FAILPOTE">${options('FAILPOTE','Low',false)}</select></div></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Pest / disease<button type="button" class="prevbtn" onclick="sameAsPrev('PESTDISEAS')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_PESTDISEAS" value="None observed" data-val="None observed" placeholder="Tap to choose or add" onclick="openDomainPicker('n_PESTDISEAS','PESTDISEAS','Pest / disease')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Impediment<button type="button" class="prevbtn" onclick="sameAsPrev('IMPEDMNT')" title="Use previous tree’s value">↩ prev</button></div><input readonly class="pickfield" id="n_IMPEDMNT" value="${esc(domLabel('IMPEDMNT','None'))}" data-val="None" placeholder="Tap to choose or add" onclick="openDomainPicker('n_IMPEDMNT','IMPEDMNT','Impediment')"></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Recommended treatment<button type="button" class="prevbtn" onclick="sameAsPrev('RECOTREA')" title="Use previous tree’s value">↩ prev</button></div><select id="n_RECOTREA">${options('RECOTREA','No Treatment',false)}</select></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Comments<button type="button" class="clearbtn" onclick="clearComments('n_COMMENTS')">✕ Clear</button></div><textarea id="n_COMMENTS" placeholder="Notes about this tree…"></textarea></div>
+    
+    <div id="autoPanel"></div>
+    <div class="actions"><button class="btn ghost" onclick="closeSheet()">Cancel</button><button class="btn brand" id="n_save" onclick="saveNewTree()">Create tree</button></div>`;
+  openSheet();
+  fillAddressFromParcel(pt);
+  renderAuto();
+  // species starts blank on a new tree — no auto lookup until the user picks one
+  computeGridXY(pt).then(o=>{Object.assign(derived,o);renderAuto();});
+  nextTreeNum().then(n=>{derived.TREENUM_NEW=n;renderAuto();});
+}
+// remember the copyable attributes of a tree just added or edited (species, size, condition, defects)
+function rememberLastTree(a){
+  if(!a) return;
+  lastTreeAttrs={
+    COMMON:a.COMMON, DBH:a.DBH, OVERHEAL:a.OVERHEAL, SITELOCA:a.SITELOCA,
+    STRUDEFE:a.STRUDEFE, WOUNCANK:a.WOUNCANK, DEADDECAY:a.DEADDECAY, FAILPOTE:a.FAILPOTE,
+    PESTDISEAS:a.PESTDISEAS, IMPEDMNT:a.IMPEDMNT, RECOTREA:a.RECOTREA
+    // deliberately NOT copied: location, address/street/park, comments, photo, dates, tree number
+  };
+}
+// fill ONE field on the new-tree form from the previous tree (per-attribute "same as previous")
+function sameAsPrev(field){
+  if(!lastTreeAttrs){ toast('No previous tree yet','warn'); return; }
+  const v=lastTreeAttrs[field];
+  if(v==null||v===''){ toast('Previous tree had no value for that','warn'); return; }
+  const id='n_'+field;
+  const el=document.getElementById(id); if(!el) return;
+  if(field==='PESTDISEAS'||field==='IMPEDMNT'){          // domain pickfields (label shown, code stored)
+    el.value=domLabelFor(id,v); el.setAttribute('data-val',v); markChanged(el);
+  } else if(field==='COMMON'){
+    el.value=v; markChanged(el); autoOnSpecies(id);
+  } else if(field==='DBH'){
+    el.value=v; markChanged(el); Object.assign(derived, dbhDerived(v)); renderAuto();
+  } else {                                                // plain selects
+    el.value=v; markChanged(el);
+  }
+  toast('Set to previous tree\u2019s value','ok');
+}
+// copy species/size/condition/defects from the last tree into the new-tree form
+function fillFromLastTree(){
+  if(!lastTreeAttrs){ toast('No previous tree yet','warn'); return; }
+  const L=lastTreeAttrs;
+  const setSel=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null){ el.value=v; markChanged(el); } };
+  const setPick=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null){ el.value=domLabelFor(id,v); el.setAttribute('data-val',v); markChanged(el); } };
+  // species + DBH (pickfields that store their display value directly)
+  const cs=document.getElementById('n_COMMON'); if(cs&&L.COMMON){ cs.value=L.COMMON; markChanged(cs); }
+  const cd=document.getElementById('n_DBH'); if(cd&&L.DBH!=null){ cd.value=L.DBH; markChanged(cd); }
+  // plain selects
+  setSel('n_OVERHEAL',L.OVERHEAL); setSel('n_SITELOCA',L.SITELOCA);
+  setSel('n_STRUDEFE',L.STRUDEFE); setSel('n_WOUNCANK',L.WOUNCANK);
+  setSel('n_DEADDECAY',L.DEADDECAY); setSel('n_FAILPOTE',L.FAILPOTE); setSel('n_RECOTREA',L.RECOTREA);
+  // domain pickfields (store code in data-val, show label)
+  setPick('n_PESTDISEAS',L.PESTDISEAS); setPick('n_IMPEDMNT',L.IMPEDMNT);
+  // recompute derived (height/crown/age from DBH, species lookup)
+  if(L.DBH!=null) Object.assign(derived, dbhDerived(L.DBH));
+  if(L.COMMON) autoOnSpecies('n_COMMON');
+  renderAuto();
+  toast('Copied from last tree — add photo & notes','ok');
+}
+// resolve a domain code to its display label for a given field id
+function domLabelFor(id,code){
+  const map={n_PESTDISEAS:'PESTDISEAS', n_IMPEDMNT:'IMPEDMNT', e_PESTDISEAS:'PESTDISEAS', e_IMPEDMNT:'IMPEDMNT'};
+  const dk=map[id]; if(!dk) return code;
+  return domLabel(dk,code);
+}
+function saveNewTree(){
+  if(!provisional){toast('No location set','warn');return;}
+  const common=gv('n_COMMON').trim(); if(!common){toast('Species is required','warn');return;}
+  Object.assign(derived, dbhDerived(gv('n_DBH')));
+  recordSpecies(common); if(gv('n_DBH')!=='') recordDbh(parseFloat(gv('n_DBH')));
+  const btn=document.getElementById('n_save'); if(btn){btn.disabled=true; btn.textContent='Creating…';}
+  // remember these attributes for a possible "Same as last tree" on the next one
+  rememberLastTree({ COMMON:common, DBH:(gv('n_DBH')?parseFloat(gv('n_DBH')):null),
+    OVERHEAL:gv('n_OVERHEAL'), SITELOCA:gv('n_SITELOCA'), STRUDEFE:gv('n_STRUDEFE'),
+    WOUNCANK:gv('n_WOUNCANK'), DEADDECAY:gv('n_DEADDECAY'), FAILPOTE:gv('n_FAILPOTE'),
+    PESTDISEAS:gvField('n_PESTDISEAS'), IMPEDMNT:gvField('n_IMPEDMNT'), RECOTREA:gv('n_RECOTREA') });
+  // ensure taxonomy resolved before writing
+  Promise.resolve(derived.SPECIES2!==undefined?derived:taxoLookup(common).then(t=>Object.assign(derived,t))).then(()=>{
+  const g=new GraphicC({geometry:provisional.geometry, attributes:{
+    COMMON:common, DBH:gv('n_DBH')?parseFloat(gv('n_DBH')):null, HEIGHT:derived.HEIGHT,
+    OVERHEAL:gv('n_OVERHEAL'), SITELOCA:gv('n_SITELOCA'), ADDRESS:pendingAddress||null, COMMENTS:gv('n_COMMENTS'),
+    STRUDEFE:gv('n_STRUDEFE'), WOUNCANK:gv('n_WOUNCANK'), DEADDECAY:gv('n_DEADDECAY'),
+    FAILPOTE:gv('n_FAILPOTE'), PESTDISEAS:gvField('n_PESTDISEAS'), IMPEDMNT:gvField('n_IMPEDMNT'), RECOTREA:gv('n_RECOTREA'),
+    SPECIES2:derived.SPECIES2, FAMILY:derived.FAMILY, CROWNDIAM:derived.CROWNDIAM, AGECLASS:derived.AGECLASS,
+    GRID:derived.GRID, X:derived.X, Y:derived.Y, TREENUM_NEW:derived.TREENUM_NEW, [CONFIG.parkTargetField]:(derived.PARKNAM||null), [CONFIG.streetTargetField]:(derived.STREET||null), [CONFIG.distTargetField]:(derived.ROADDIST==null?null:derived.ROADDIST),
+    // stamp the inventory date so new trees appear under date filters (Field Maps sets this too).
+    // DATE_NEW = most-recent inspection date (what the dashboard filters on); DATE_ = original date.
+    DATE_NEW:Date.now(), DATE_:Date.now(), INSPECTR:(currentInspector||null),
+    ...( (treeDateField && treeDateField!=='DATE_NEW') ? {[treeDateField]:Date.now()} : {} )
+  }});
+  // SAVE-FIRST: give the tree a local GlobalID, queue it (with photos) on the device, then upload in bg.
+  const gid=newGuid(); g.attributes.GlobalID=gid;
+  const photos=photosToRecords(newPhotoFiles.slice());
+  const geom=(provisional&&provisional.geometry)?provisional.geometry.clone?provisional.geometry.clone():provisional.geometry:null;
+  queueJob('tree-add', {attributes:g.attributes, geometry:geom, photos:photos}).then(()=>{
+    clearProvisional(); if(addMode)toggleAdd();
+    if(btn){btn.disabled=false; btn.textContent='Create tree';}
+    toast('Tree saved on device — log its first activity','ok');
+    // open the inspection form immediately, working from the local GlobalID (no server round-trip)
+    const ng={attributes:Object.assign({}, g.attributes), geometry:geom};
+    selectedGraphic=ng; rememberLastTree(g.attributes);
+    openInspection(ng,'Inspection');
+    flushQueue();   // try to upload right away; stays queued on poor signal
+  }).catch(err=>{
+    if(btn){btn.disabled=false; btn.textContent='Create tree';}
+    toast('Could not save on device: '+((err&&err.message)||err)+' — do not close the app','err');
+  });
+  });
+}
+// generate a GlobalID locally so an offline-created tree and its first log share the same id
+function newGuid(){
+  if(window.crypto&&crypto.randomUUID){ return '{'+crypto.randomUUID().toUpperCase()+'}'; }
+  // fallback
+  const s='xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);});
+  return '{'+s.toUpperCase()+'}';
+}
+// applyEdits with a small automatic retry for transient network / token failures
+function applyEditsWithRetry(layer, edits, tries){
+  tries = tries||1;
+  return layer.applyEdits(edits).catch(err=>{
+    const msg=(err&&(err.message||err.name))||String(err);
+    const transient=/load failed|network|failed to fetch|timeout|429|500|502|503|504/i.test(msg);
+    if(tries>1 && transient){
+      return new Promise(res=>setTimeout(res, 900)).then(()=>applyEditsWithRetry(layer, edits, tries-1));
+    }
+    throw err;
+  });
+}
+
+/* ------------- INSPECTION ------------- */
+let photoFiles=[], editingInsp=null, resyncSnapshot=false, newPhotoFiles=[], editPhotoFiles=[];
+let lastTreeAttrs=null;   // attributes of the last tree added/edited this session (for 'Same as last tree')
+function resyncFromTree(){
+  const a=selectedGraphic&&selectedGraphic.attributes; if(!a)return;
+  const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=dval(v);};
+  set('lk_species',a.COMMON); set('lk_cond',a.OVERHEAL); set('lk_struct',a.STRUDEFE); set('lk_wound',a.WOUNCANK);
+  set('lk_decay',a.DEADDECAY); set('lk_fail',a.FAILPOTE); set('lk_pest',a.PESTDISEAS); set('lk_imped',a.IMPEDMNT);
+  set('lk_dbh',a.DBH); set('lk_rec',a.RECOTREA);
+  resyncSnapshot=true; toast('Snapshot re-synced from tree — save to apply','ok');
+}
+function openInspection(g,preset,editRec,isCorrection){
+  g=g||selectedGraphic; if(!g)return; selectedGraphic=g; const a=g.attributes; photoFiles=[];
+  editingInsp = editRec||null; resyncSnapshot=!!isCorrection;   // corrections write the updated snapshot to the existing log
+  const R = editRec||{};
+  setHead(editRec?'TREE LOG · EDIT':'TREE LOG · NEW',val(a.COMMON)!=='—'?a.COMMON:'Tree',
+          editRec?'Updates this log record':'Records an activity against this tree',healthColor(a.OVERHEAL));
+  document.getElementById('shBody').innerHTML=`
+    <div class="field"><label>Activity type <span class="req">*</span></label><select id="i_activity" onchange="applyActivity()">${options('activity_type',editRec?R.activity_type:(preset||'Inspection'),false)}</select></div>
+    <div class="frow"><div class="field"><label>Inspector</label><input id="i_inspector" list="inspectors" value="${esc(editRec?(R.inspector_name||''):(currentInspector||''))}" placeholder="Name or initials"><datalist id="inspectors">${Object.keys(DOMAINS.inspector_name||{}).map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div><div class="field"><label>Date</label><input type="date" id="i_date" value="${editRec?esc(fmtDateInput(logDate(R))):today()}"></div></div>
+    <div class="grp-snapnote treenote hide">🔒 <b>This inspection just records your visit</b> — a note and photo, dated today. The condition &amp; defects below show the tree\u2019s current record for reference (read-only). If anything has changed, go Back → <b>Edit tree</b> to update it.${editRec?' <br><button class="btn ghost" style="margin-top:8px;width:100%" onclick="resyncFromTree()">↻ Re-sync condition/defects from current tree</button>':''}</div>
+    <div class="field grp-species hide"><label>Species (as planted)</label><div class="locked" id="lk_species">${esc(dval(editRec?R.Species:a.COMMON))}</div></div>
+    <div class="field"><div class="fieldlbl" style="display:flex;align-items:center;justify-content:space-between">Notes<button type="button" class="clearbtn" onclick="clearComments('i_notes')">✕ Clear</button></div><textarea id="i_notes" placeholder="Visit-specific detail…">${esc(editRec?(R.maintenance_notes||''):'')}</textarea></div>
+    <div class="photoblock"><label class="photobtn" id="i_photowrap"><input type="file" accept="image/*" capture="environment" id="i_photo" onchange="onPhoto(event)"><svg viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="currentColor" stroke-width="1.9"/></svg><div class="big">\uD83D\uDCF7 Take a photo</div><div class="sm">Press here to open the camera</div></label><input type="file" accept="image/*" multiple id="i_photolib" onchange="onPhoto(event)" style="display:none"><div class="liblink" onclick="document.getElementById('i_photolib').click()">or attach from library</div><div id="i_photoprev" class="photogrid"></div></div>
+    <div class="field grp-condition hide"><label>Condition at inspection</label><div class="locked" id="lk_cond">${esc(dval(editRec?R.condition_at_inspection:a.OVERHEAL))}</div></div>
+    <div class="grp-defects hide"><div class="slabel">Defect snapshot · from tree</div>
+      <div class="frow"><div class="field"><label>Structural</label><div class="locked" id="lk_struct">${esc(dval(editRec?R.Structdefe_at_inspection:a.STRUDEFE))}</div></div><div class="field"><label>Wound / canker</label><div class="locked" id="lk_wound">${esc(dval(editRec?R.Woundcank_at_inspection:a.WOUNCANK))}</div></div></div>
+      <div class="frow"><div class="field"><label>Dead / decay</label><div class="locked" id="lk_decay">${esc(dval(editRec?R.Deaddecay_at_inspection:a.DEADDECAY))}</div></div><div class="field"><label>Failure potential</label><div class="locked" id="lk_fail">${esc(dval(editRec?R.Failpote_at_inspection:a.FAILPOTE))}</div></div></div>
+      <div class="field"><label>Pest / disease</label><div class="locked" id="lk_pest">${esc(dval(editRec?R.Pestdisease_at_inspection:a.PESTDISEAS))}</div></div>
+      <div class="field"><label>Impediment</label><div class="locked" id="lk_imped">${esc(dval(editRec?R.Impediment_at_inspection:a.IMPEDMNT))}</div></div></div>
+    <div class="field grp-dbh hide"><label>DBH (cm) · from tree</label><div class="locked" id="lk_dbh">${esc(dval(editRec?R.DBH:a.DBH))}</div></div>
+    <div class="field grp-removal hide"><label>Removal reason</label><select id="i_removal">${options('Removal_reason',editRec?R.Removal_reason:'',true)}</select></div>
+    <div class="field grp-recommend hide"><label>Recommended treatment · from tree</label><div class="locked" id="lk_rec">${esc(dval(editRec?R.recommendations:a.RECOTREA))}</div></div>
+    <div class="actions"><button class="btn ghost" onclick="openTree(selectedGraphic)">Back</button><button class="btn primary" id="i_submit" onclick="submitInspection()">${editRec?'Save changes':'Save log'}</button></div>`;
+  applyActivity(); openSheet();
+}
+function show(sel,on){document.querySelectorAll(sel).forEach(e=>e.classList.toggle('hide',!on));}
+function applyActivity(){
+  const act=gv('i_activity');const gr=ACT_FIELDS[act]||[];
+  show('.grp-condition',gr.includes('condition'));show('.grp-defects',gr.includes('defects'));show('.grp-dbh',gr.includes('dbh'));
+  show('.grp-recommend',gr.includes('recommend'));show('.grp-removal',gr.includes('removal'));show('.grp-species',gr.includes('species'));
+  show('.grp-snapnote', act==='Inspection'||act==='Planted');
+  const b=document.getElementById('i_submit');if(b)b.textContent=act==='Removed'?'Submit removal':act==='Planted'?'Submit planting':'Save log';
+}
+// downscale a captured photo to speed up upload: 1600px long edge, JPEG ~80%.
+// Returns a Promise<File>; on any failure it resolves the ORIGINAL so a save never breaks.
+// photo upload quality — changeable in the SYNC & settings panel (persists for the session)
+const PHOTO_PRESETS={
+  fast:   {edge:1000, q:0.65, label:'Fast (smallest, ~120 KB)'},
+  balanced:{edge:1400, q:0.72, label:'Balanced (~250 KB)'},
+  detail: {edge:2000, q:0.8,  label:'High detail (~500 KB)'}
+};
+let PHOTO_PRESET = 'fast';   // default to fastest uploads in the field
+let PHOTO_MAXEDGE = PHOTO_PRESETS[PHOTO_PRESET].edge;
+let PHOTO_QUALITY = PHOTO_PRESETS[PHOTO_PRESET].q;
+function setPhotoPreset(key){
+  if(!PHOTO_PRESETS[key]) return;
+  PHOTO_PRESET=key; PHOTO_MAXEDGE=PHOTO_PRESETS[key].edge; PHOTO_QUALITY=PHOTO_PRESETS[key].q;
+  try{ localStorage.setItem('aurora_photo_preset', key); }catch(e){}
+  toast('Photo quality: '+PHOTO_PRESETS[key].label,'ok');
+}
+// restore saved preference on load
+(function(){ try{ const s=localStorage.getItem('aurora_photo_preset'); if(s&&PHOTO_PRESETS[s]) setPhotoPresetQuiet(s); }catch(e){} })();
+function setPhotoPresetQuiet(key){ if(!PHOTO_PRESETS[key])return; PHOTO_PRESET=key; PHOTO_MAXEDGE=PHOTO_PRESETS[key].edge; PHOTO_QUALITY=PHOTO_PRESETS[key].q; }
+function pickPhotoPreset(key){
+  setPhotoPreset(key);
+  const wrap=document.getElementById('photoPresetPicks');
+  if(wrap){ wrap.querySelectorAll('.hlp').forEach(b=>b.classList.remove('on'));
+    const idx={fast:0,balanced:1,detail:2}[key]; const btns=wrap.querySelectorAll('.hlp'); if(btns[idx]) btns[idx].classList.add('on'); }
+  const hint=document.getElementById('photoPresetHint'); if(hint) hint.textContent=PHOTO_PRESETS[key].label;
+}
+function _blobToFile(blob, file){
+  if(!blob) return file;
+  const name=(file.name||'photo').replace(/\.(png|heic|heif|webp|tiff?)$/i,'.jpg');
+  try{ return new File([blob], /\.jpe?g$/i.test(name)?name:(name+'.jpg'), {type:'image/jpeg', lastModified:Date.now()}); }
+  catch(e){ try{ blob.name=name; }catch(_){}; return blob; }   // some Android WebViews lack the File constructor
+}
+function _encodeCanvas(cv, file, resolve){
+  if(cv.toBlob){ cv.toBlob(function(b){ resolve(_blobToFile(b,file)); }, 'image/jpeg', PHOTO_QUALITY); }
+  else { try{ const d=cv.toDataURL('image/jpeg', PHOTO_QUALITY); const bin=atob(d.split(',')[1]); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); resolve(_blobToFile(new Blob([u],{type:'image/jpeg'}),file)); }catch(e){ resolve(file); } }
+}
+function resizeImage(file){
+  return new Promise(resolve=>{
+    try{
+      if(!file || !/^image\//.test(file.type||'')) return resolve(file);
+      // FAST PATH: createImageBitmap decodes off the main thread and downscales during decode —
+      // dramatically quicker than <img>+drawImage for large Android camera photos.
+      if(window.createImageBitmap){
+        createImageBitmap(file).then(function(bmp){
+          const long=Math.max(bmp.width, bmp.height);
+          if(long<=PHOTO_MAXEDGE){ try{bmp.close&&bmp.close();}catch(e){}; return resolve(file); }
+          const scale=PHOTO_MAXEDGE/long;
+          const w=Math.round(bmp.width*scale), h=Math.round(bmp.height*scale);
+          const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+          cv.getContext('2d').drawImage(bmp,0,0,w,h);
+          try{bmp.close&&bmp.close();}catch(e){}
+          _encodeCanvas(cv, file, resolve);
+        }).catch(function(){ _resizeViaImg(file, resolve); });   // fall back if createImageBitmap fails (e.g. HEIC)
+        return;
+      }
+      _resizeViaImg(file, resolve);
+    }catch(e){ resolve(file); }
+  });
+}
+// fallback resize path (older browsers / formats createImageBitmap can't decode)
+function _resizeViaImg(file, resolve){
+  try{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=function(){
+      try{
+        let w=img.width, h=img.height; const long=Math.max(w,h);
+        if(long<=PHOTO_MAXEDGE){ URL.revokeObjectURL(url); return resolve(file); }
+        const scale=PHOTO_MAXEDGE/long; w=Math.round(w*scale); h=Math.round(h*scale);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+        cv.getContext('2d').drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        _encodeCanvas(cv, file, resolve);
+      }catch(e){ URL.revokeObjectURL(url); resolve(file); }
+    };
+    img.onerror=function(){ URL.revokeObjectURL(url); resolve(file); };
+    img.src=url;
+  }catch(e){ resolve(file); }
+}
+// shared multi-photo handler: resize each selected file, append to the target array, render thumbnails.
+// wrapId/prevId identify the DOM; getArr returns the backing array (photoFiles / newPhotoFiles / editPhotoFiles).
+function handlePhotos(ev, wrapId, prevId, arr){
+  const files=Array.from(ev.target.files||[]); if(!files.length)return;
+  const w=document.getElementById(wrapId); if(w) w.classList.add('has');
+  let prev=document.getElementById(prevId);
+  if(!prev){ prev=document.createElement('div'); prev.id=prevId; prev.className='photogrid'; if(w) w.appendChild(prev); }
+  ev.target.value='';                     // allow re-selecting/adding more later
+  files.forEach(f0=>{
+    const cell=document.createElement('div'); cell.className='photocell';
+    cell.innerHTML='<div class="fn">…</div>'; prev.appendChild(cell);
+    // Push the ORIGINAL file into the array IMMEDIATELY so it is present the instant the user hits Save,
+    // even if resizing is slow or fails (Android canvas.toBlob can stall on camera images). We then
+    // swap in the smaller resized version in-place once it is ready — the slot index never changes.
+    const idx=arr.length; arr.push(f0);
+    resizeImage(f0).then(f=>{
+      arr[idx]=f;                          // replace original with resized (same slot)
+      const r=new FileReader();
+      r.onload=e=>{ cell.innerHTML=`<img src="${e.target.result}"><button type="button" class="rmphoto" title="Remove" data-arr="${prevId}" data-i="${idx}">\u2715</button><div class="fn">${Math.round((f.size||0)/1024)} KB</div>`; };
+      r.readAsDataURL(f);
+    }).catch(()=>{ /* keep the original file in the slot; still uploads */
+      const r=new FileReader();
+      try{ r.onload=e=>{ cell.innerHTML=`<img src="${e.target.result}"><button type="button" class="rmphoto" title="Remove" data-arr="${prevId}" data-i="${idx}">\u2715</button><div class="fn">photo</div>`; }; r.readAsDataURL(f0); }catch(e){ cell.innerHTML='<div class="fn">photo ready</div>'; }
+    });
+  });
+}
+function onEditPhoto(ev){ handlePhotos(ev,'e_photowrap','e_photoprev',editPhotoFiles); }
+function onNewPhoto(ev){ handlePhotos(ev,'n_photowrap','n_photoprev',newPhotoFiles); }
+function onPhoto(ev){ handlePhotos(ev,'i_photowrap','i_photoprev',photoFiles); }
+// remove a thumbnail (marks the slot null; upload loops skip nulls)
+document.addEventListener('click', function(e){
+  const b=e.target.closest && e.target.closest('.rmphoto'); if(!b)return;
+  e.preventDefault();
+  const which=b.getAttribute('data-arr'); const i=parseInt(b.getAttribute('data-i'),10);
+  const arr = which==='e_photoprev'?editPhotoFiles : which==='n_photoprev'?newPhotoFiles : photoFiles;
+  if(arr && i>=0 && i<arr.length) arr[i]=null;
+  const cell=b.closest('.photocell'); if(cell) cell.remove();
+});
+function buildInspectionAttrs(gid){
+  const act=gv('i_activity');
+  const a=(selectedGraphic&&selectedGraphic.attributes)||{};
+  const base={
+    [CONFIG.fkField]:gid, activity_type:act, inspector_name:gv('i_inspector'),
+    inspection_date:(gv('i_date')||today()), ACTIVITY_DATE:(gv('i_date')||today()),
+    Removal_reason:gv('i_removal'), maintenance_notes:gv('i_notes')
+  };
+  // condition/defects/dbh/recommendation are derived from the tree (read-only in the log)
+  if(act==='Inspection'||act==='Planted'){
+    Object.assign(base,{
+      condition_at_inspection:a.OVERHEAL, Structdefe_at_inspection:a.STRUDEFE, Woundcank_at_inspection:a.WOUNCANK,
+      Deaddecay_at_inspection:a.DEADDECAY, Failpote_at_inspection:a.FAILPOTE, Pestdisease_at_inspection:a.PESTDISEAS,
+      Impediment_at_inspection:a.IMPEDMNT, DBH:(a.DBH!=null?a.DBH:null), recommendations:a.RECOTREA, Species:a.COMMON
+    });
+  }
+  return base;
+}
+function submitInspection(){
+  const g=selectedGraphic; if(!g)return; const gid=g.attributes.GlobalID;
+  const act=gv('i_activity'); if(!act){toast('Choose an activity type','warn');return;}
+  const attrs=buildInspectionAttrs(gid);
+  const btn=document.getElementById('i_submit'); btn.disabled=true; btn.textContent='Saving…';
+
+  // ---- EDIT existing log: update the editable fields only, keep the recorded snapshot ----
+  if(editingInsp){
+    const oid=editingInsp[inspLayer.objectIdField];
+    const upd={ [inspLayer.objectIdField]:oid,
+      activity_type:attrs.activity_type, inspector_name:attrs.inspector_name,
+      inspection_date:attrs.inspection_date, ACTIVITY_DATE:attrs.ACTIVITY_DATE,
+      Removal_reason:attrs.Removal_reason, maintenance_notes:attrs.maintenance_notes };
+    if(resyncSnapshot){ const a=g.attributes; Object.assign(upd,{
+      condition_at_inspection:a.OVERHEAL, Structdefe_at_inspection:a.STRUDEFE, Woundcank_at_inspection:a.WOUNCANK,
+      Deaddecay_at_inspection:a.DEADDECAY, Failpote_at_inspection:a.FAILPOTE, Pestdisease_at_inspection:a.PESTDISEAS,
+      Impediment_at_inspection:a.IMPEDMNT, DBH:(a.DBH!=null?a.DBH:null), recommendations:a.RECOTREA, Species:a.COMMON }); }
+    const _editPhotos=photoFiles.slice();
+    const _treeOidE = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
+    inspLayer.applyEdits({updateFeatures:[{attributes:upd}]}).then(r=>{
+      if(r.updateFeatureResults[0].error) throw r.updateFeatureResults[0].error;
+      if(_editPhotos.length){ return addPhotosTo(inspLayer, oid, _editPhotos).then(()=> _treeOidE!=null ? addPhotosTo(treeLayer, _treeOidE, _editPhotos).catch(()=>{}) : null); }
+    }).then(()=>{
+      editingInsp=null; resyncSnapshot=false; toast('Log updated','ok'); closeSheet();
+    }).catch(err=>{ btn.disabled=false; btn.textContent='Save changes'; toast('Update failed: '+(err.message||err),'err'); });
+    return;
+  }
+
+  // SAVE-FIRST new log: queue it (with photos) on the device, then upload in the background.
+  const treeOid = g && g.attributes ? g.attributes[treeLayer.objectIdField] : null;
+  const logPhotos=photosToRecords(photoFiles.slice());
+  if(attrs.condition_at_inspection){ g.attributes.OVERHEAL=attrs.condition_at_inspection; treeLayer.refresh();
+    if(g.attributes.GlobalID) applyPendingEdit(g.attributes.GlobalID, {OVERHEAL:attrs.condition_at_inspection}); }
+  queueJob('log', {attributes:attrs, photos:logPhotos, treeOid:treeOid}).then(()=>{
+    noteSessionLog(gid, null, attrs);   // enable same-session correction detection before upload
+    btn.disabled=false; btn.textContent='Save log';
+    toast('Log saved on device — uploading…','ok'); closeSheet();
+    flushQueue();
+  }).catch(err=>{ btn.disabled=false; btn.textContent='Save log'; toast('Could not save on device: '+((err&&err.message)||err),'err'); });
+}
+// iOS accepts a populated file-input form; Android's DataTransfer/input.files is unreliable, so we
+// fall back to FormData there. Trying both covers every device (fixes "photo saves on iPhone, not Android").
+function _photoFormEl(file){
+  const form=document.createElement('form');
+  const input=document.createElement('input'); input.type='file'; input.name='attachment';
+  try{ const dt=new DataTransfer(); dt.items.add(file); input.files=dt.files; }catch(e){}
+  form.appendChild(input);
+  return form;
+}
+function _photoFormData(file){
+  const fd=new FormData();
+  fd.append('attachment', file, (file&&file.name)||'photo.jpg');
+  return fd;
+}
+// attach many photos (array, may contain nulls from removed thumbnails) to one feature, in sequence
+function addPhotosTo(layer, oid, files){
+  const list=(files||[]).filter(Boolean);
+  let firstErr=null;
+  return list.reduce((chain,f)=>chain.then(()=>addPhotoTo(layer,oid,f).catch(e=>{ if(!firstErr) firstErr=e; })), Promise.resolve())
+    .then(()=>{ if(firstErr && typeof toast==='function'){ const m=(firstErr&&(firstErr.message||firstErr.name))||String(firstErr); toast('Photo not saved: '+m,'err'); } });
+}
+function addPhotoTo(layer, oid, file){
+  if(!layer||oid==null||!file) return Promise.resolve();
+  const feature=new GraphicC({attributes:{[layer.objectIdField]:oid}});
+  const okr=r=>{ if(r&&r.error) throw r.error; return r; };
+  // FormData FIRST — the most reliable path on Android (no DataTransfer, no File constructor needed).
+  // Fall back to the populated <form> element only if FormData is rejected (some iOS/ArcGIS combos).
+  return layer.addAttachment(feature, _photoFormData(file)).then(okr)
+    .catch(function(){
+      const elForm=_photoFormEl(file);
+      return layer.addAttachment(feature, elForm).then(okr);
+    });
+}
+// inspection-record attachment (kept for existing callers)
+function addPhoto(oid, file){ return addPhotoTo(inspLayer, oid, file); }
+// tree-point attachment — mirrors the ArcGIS Field Maps behaviour of putting the photo on the tree too
+function addTreePhoto(treeOid, file){ return addPhotoTo(treeLayer, treeOid, file); }
+// attach to the tree from a named live input if present, else from the stored File
+function addTreePhotoFrom(inputId, treeOid, file){ return addPhotoTo(treeLayer, treeOid, file); }
+
+/* ------------- FAILPROOF save-first sync engine (IndexedDB) ------------- */
+// Every add/edit/log is written to the device FIRST (photos as blobs), then uploaded in the background.
+// A queued job is only removed after the server confirms the record AND all its photos.
+const Buffer={
+  db:null,
+  init(){return new Promise((res)=>{
+    const rq=indexedDB.open('aurora-canopy',2);   // v2: jobs store full payload incl. photo blobs
+    rq.onupgradeneeded=e=>{ const db=e.target.result; if(!db.objectStoreNames.contains('pending')) db.createObjectStore('pending',{keyPath:'id',autoIncrement:true}); };
+    rq.onsuccess=e=>{ this.db=e.target.result; res(); };
+    rq.onerror=()=>res();
+  });},
+  add(rec){return new Promise((res,rej)=>{ if(!this.db)return rej(new Error('no device storage')); const tx=this.db.transaction('pending','readwrite'); const r=tx.objectStore('pending').add(rec); r.onsuccess=()=>{ res(r.result); }; tx.onerror=()=>rej(tx.error||new Error('save failed')); });},
+  put(rec){return new Promise((res)=>{ if(!this.db)return res(); const tx=this.db.transaction('pending','readwrite'); tx.objectStore('pending').put(rec); tx.oncomplete=()=>res(); tx.onerror=()=>res(); });},
+  all(){return new Promise((res)=>{ if(!this.db)return res([]); const out=[]; const tx=this.db.transaction('pending','readonly'); tx.objectStore('pending').openCursor().onsuccess=e=>{const c=e.target.result; if(c){out.push(Object.assign({id:c.key},c.value)); c.continue();} else res(out);}; });},
+  remove(id){return new Promise((res)=>{ if(!this.db)return res(); const tx=this.db.transaction('pending','readwrite'); tx.objectStore('pending').delete(id); tx.oncomplete=()=>res(); tx.onerror=()=>res(); });},
+  count(){return this.all().then(a=>a.length);}
+};
+// ask the OS not to evict our data (best-effort; honored by most browsers)
+async function requestPersistence(){ try{ if(navigator.storage&&navigator.storage.persist){ const already=await navigator.storage.persisted(); if(!already) await navigator.storage.persist(); } }catch(e){} }
+// turn File/Blob photo inputs into records that survive in IndexedDB
+function photosToRecords(files){ return (files||[]).filter(Boolean).map(f=>({ blob:f, name:(f.name||('photo_'+Date.now()+'.jpg')), type:(f.type||'image/jpeg') })); }
+// queue a job on the device. kind: 'tree-add' | 'tree-edit' | 'log'
+function queueJob(kind, payload){
+  return Buffer.add({ kind:kind, ts:Date.now(), tries:0, payload:payload }).then(id=>{ Buffer.count().then(updateQueueBadge); return id; });
+}
+function updateQueueBadge(n){
+  const el=document.getElementById('rQueue'); if(el){ el.textContent=n; el.style.color=n?cssv('--amber'):''; }
+  const s=document.getElementById('syncLbl'); if(s) s.textContent=n?('pending '+n):'idle';
+  const off=document.getElementById('offline'); if(off){ if(n && !navigator.onLine) off.classList.add('show'); else off.classList.remove('show'); }
+}
+// upload one job; resolve true only if fully synced (record + all photos)
+async function syncJob(job){
+  const p=job.payload||{};
+  try{
+    if(job.kind==='tree-add'){
+      const g=new GraphicC({geometry:p.geometry, attributes:p.attributes});
+      const r=await treeLayer.applyEdits({addFeatures:[g]});
+      const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+      await uploadPhotos(treeLayer, res.objectId, p.photos);
+      bumpDay('add'); treeLayer.refresh();
+      return true;
+    }
+    if(job.kind==='tree-edit'){
+      const gid=p.attributes.GlobalID; let oid=p.oid;
+      if(oid==null && gid){ const q=await treeLayer.queryFeatures({where:"GlobalID='"+String(gid).replace(/'/g,"''")+"'", outFields:[treeLayer.objectIdField], returnGeometry:false}); if(q.features.length) oid=q.features[0].attributes[treeLayer.objectIdField]; }
+      const attrs=Object.assign({}, p.attributes); if(oid!=null) attrs[treeLayer.objectIdField]=oid;
+      const edit={attributes:attrs}; if(p.geometry) edit.geometry=p.geometry;
+      const r=await treeLayer.applyEdits({updateFeatures:[edit]});
+      const res=r.updateFeatureResults[0]; if(res&&res.error) throw res.error;
+      if(oid!=null) await uploadPhotos(treeLayer, oid, p.photos);
+      bumpDay('edit'); treeLayer.refresh();
+      return true;
+    }
+    if(job.kind==='log'){
+      const g=new GraphicC({attributes:p.attributes});
+      const r=await inspLayer.applyEdits({addFeatures:[g]});
+      const res=r.addFeatureResults[0]; if(res.error) throw res.error;
+      await uploadPhotos(inspLayer, res.objectId, p.photos);
+      if(p.treeOid!=null) await uploadPhotos(treeLayer, p.treeOid, p.photos).catch(()=>{});
+      bumpDay('log');
+      return true;
+    }
+  }catch(e){ return false; }
+  return false;
+}
+async function uploadPhotos(layer, oid, photos){
+  const list=(photos||[]).filter(Boolean);
+  for(const ph of list){
+    const file=ph.blob?(function(){ try{ return new File([ph.blob], ph.name||'photo.jpg', {type:ph.type||'image/jpeg'}); }catch(e){ return ph.blob; } })():ph;
+    await addPhotoTo(layer, oid, file);   // throws on failure -> job stays queued
+  }
+}
+let _flushing=false;
+function flushQueue(){
+  if(_flushing) return; _flushing=true;
+  Buffer.all().then(async items=>{
+    if(!items.length){ _flushing=false; updateQueueBadge(0); return; }
+    const off=document.getElementById('offline'); if(off) off.classList.remove('show');
+    const s=document.getElementById('syncLbl'); if(s) s.textContent='syncing…';
+    let synced=0;
+    for(const job of items){
+      const ok=await syncJob(job);
+      if(ok){ await Buffer.remove(job.id); synced++; try{ const gg=job.payload&&job.payload.attributes&&job.payload.attributes.GlobalID; if(gg) clearPendingEdit(gg); }catch(e){} }
+      else { job.tries=(job.tries||0)+1; try{ await Buffer.put(job); }catch(e){} }
+      const left=await Buffer.count(); updateQueueBadge(left);
+    }
+    _flushing=false;
+    const left=await Buffer.count();
+    if(left===0){ if(synced>0) toast('All work synced to the server','ok'); }
+    else if(synced>0){ toast(synced+' synced, '+left+' still pending — will keep retrying','warn'); }
+  }).catch(()=>{ _flushing=false; });
+}
+// background retry: drain the queue whenever ANY connection exists (not just on an offline->online flip)
+setInterval(function(){ if(navigator.onLine){ Buffer.count().then(n=>{ if(n>0 && !_flushing) flushQueue(); }); } }, 20000);
+
+/* ------------- records / sync panel ------------- */
+/* ---- map highlight by last-inventory date (DATE_NEW) ---- */
+function applyHighlight(where,lbl){
+  highlightWhere=where;
+  if(highlightLayer) highlightLayer.definitionExpression=where;
+  const el=document.getElementById('flagLbl'); if(el)el.textContent=lbl;
+  const btn=document.getElementById('btnFlag'); if(btn)btn.classList.toggle('on', where!=="1=2");
+  toast('Highlight: '+lbl,'ok'); closeSheet();
+}
+function setHighlight(kind){
+  const iso=y=>{const d=new Date();d.setFullYear(d.getFullYear()-y);return d.toISOString().slice(0,10);};
+  if(kind==='off') return applyHighlight("1=2","off");
+  if(kind==='pre2023') return applyHighlight("DATE_NEW < DATE '2023-01-01'","pre-2023");
+  if(kind==='1') return applyHighlight("DATE_NEW >= DATE '"+iso(1)+"'","last 12 mo");
+  return applyHighlight("DATE_NEW < DATE '"+iso(parseInt(kind,10))+"'",kind+"+ yr");
+}
+function applyHighlightCustom(){
+  const f=gv('hlFrom'), t=gv('hlTo'); const parts=[];
+  if(f) parts.push("DATE_NEW >= DATE '"+f+"'");
+  if(t){ const d=new Date(t); d.setDate(d.getDate()+1); parts.push("DATE_NEW < DATE '"+d.toISOString().slice(0,10)+"'"); }
+  if(!parts.length){ toast('Pick a from or to date','warn'); return; }
+  applyHighlight(parts.join(" AND "), (f||'…')+' → '+(t||'…'));
+}
+function openLayers(){ const o=document.getElementById('layersOverlay'); if(o)o.classList.add('show'); }
+function layersClose(){ const o=document.getElementById('layersOverlay'); if(o)o.classList.remove('show'); }
+function toggleFieldLayer(which,on){ const L=which==='parcels'?parcelLayer:which==='roads'?roadsLayer:gridLayer; if(L)L.visible=!!on; }
+function openHighlight(){
+  if(addMode)toggleAdd(); selectedGraphic=null;
+  setHead('MAP HIGHLIGHT','Flag trees by last-inventory date','Yellow halo marks the matches',cssv('--amber'));
+  document.getElementById('shBody').innerHTML=`
+    <div class="treenote" style="margin-top:10px">Trees whose <b>last inventory date</b> falls in the chosen range get a yellow halo on the map — a fast way to see which trees are due to be re-inventoried.</div>
+    <div class="slabel">Quick picks</div>
+    <div class="hlpicks">
+      <button class="hlp" onclick="setHighlight('off')">Off</button>
+      <button class="hlp" onclick="setHighlight('pre2023')">Before 2023</button>
+      <button class="hlp" onclick="setHighlight('5')">Not seen 5+ yr</button>
+      <button class="hlp" onclick="setHighlight('2')">Not seen 2+ yr</button>
+      <button class="hlp" onclick="setHighlight('1')">Last 12 months</button>
+    </div>
+    <div class="slabel">Custom range · last inventory date</div>
+    <div class="frow"><div class="field"><label>From</label><input type="date" id="hlFrom"></div><div class="field"><label>To</label><input type="date" id="hlTo"></div></div>
+    <div class="actions"><button class="btn ghost" onclick="closeSheet()">Close</button><button class="btn brand" onclick="applyHighlightCustom()">Apply range</button></div>`;
+  openSheet();
+}
+function openDashboard(){
+  if(addMode)toggleAdd(); selectedGraphic=null;
+  setHead('DASHBOARD · TODAY', currentInspector?('Logging as '+currentInspector):'Daily activity', new Date().toDateString(), cssv('--brand'));
+  const total=dayAdded+dayEdited+dayLogged;
+  const body=document.getElementById('shBody');
+  body.innerHTML=`
+    <div class="attrs" style="grid-template-columns:1fr 1fr;margin-top:12px">
+      <div class="attr"><div class="k">Trees added (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayAdded}</div></div>
+      <div class="attr"><div class="k">Trees edited (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayEdited}</div></div>
+      <div class="attr"><div class="k">Logs recorded (session)</div><div class="v" style="font-size:26px;font-family:var(--mono)">${dayLogged}</div></div>
+      <div class="attr"><div class="k">Total actions (session)</div><div class="v" style="font-size:26px;font-family:var(--mono);color:var(--amber)">${total}</div></div>
+    </div>
+    <div class="note" style="margin-top:6px">“Session” counts only what <b>you</b> have done since opening the app (they reset when the app reloads). The numbers below are the <b>true daily totals for the whole crew</b>, pulled live from the layer.</div>
+    <div class="slabel">From the live layer · <span id="dashPeriodLbl">Today</span></div>
+    <div class="hlpicks">
+      <button class="hlp" id="dp_today" onclick="setDashPeriod('today')">Today</button>
+      <button class="hlp" id="dp_yesterday" onclick="setDashPeriod('yesterday')">Yesterday</button>
+      <button class="hlp" id="dp_7d" onclick="setDashPeriod('7d')">Last 7 days</button>
+    </div>
+    <div id="dashLive"><div class="empty">Loading…</div></div>
+    <div class="slabel">Trees by collector · <span class="dashPeriodLbl2">today</span></div>
+    <div id="dashCollector"><div class="empty">Loading…</div></div>
+    <div class="slabel">Logs by inspector</div>
+    <div id="dashInsp"><div class="empty">Loading…</div></div>
+    <div class="slabel">Logs by activity</div>
+    <div id="dashAct"><div class="empty">Loading…</div></div>
+    <div class="actions"><button class="btn brand" onclick="closeSheet()">Done</button></div>`;
+  openSheet();
+  setDashPeriod(dashPeriod);
+}
+// local-time day boundaries (the layer stores UTC, so convert) — otherwise evening work lands on the next day
+function tsLit(d){ const p=n=>String(n).padStart(2,'0');
+  return "TIMESTAMP '"+d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate())+" "+p(d.getUTCHours())+":"+p(d.getUTCMinutes())+":"+p(d.getUTCSeconds())+"'"; }
+function periodBounds(kind){
+  const n=new Date(); const midnight=new Date(n.getFullYear(),n.getMonth(),n.getDate(),0,0,0,0);
+  if(kind==='yesterday'){ const s=new Date(midnight.getTime()-86400000); return {s:s, e:midnight, label:'Yesterday'}; }
+  if(kind==='7d'){ const s=new Date(midnight.getTime()-6*86400000); return {s:s, e:new Date(midnight.getTime()+86400000), label:'Last 7 days'}; }
+  return {s:midnight, e:new Date(midnight.getTime()+86400000), label:'Today'};
+}
+function setDashPeriod(k){ dashPeriod=k; ['today','yesterday','7d'].forEach(x=>{const b=document.getElementById('dp_'+x); if(b)b.classList.toggle('on',x===k);}); loadDashPeriod(k); }
+function loadDashPeriod(kind){
+  const B=periodBounds(kind); const A=tsLit(B.s), Z=tsLit(B.e);
+  const lbl=document.getElementById('dashPeriodLbl'); if(lbl) lbl.textContent=B.label;
+  document.querySelectorAll('.dashPeriodLbl2').forEach(e=>e.textContent=B.label.toLowerCase());
+  ['dashLive','dashInsp','dashAct'].forEach(id=>{const el=document.getElementById(id); if(el)el.innerHTML='<div class="empty">Loading…</div>';});
+  const wAdd=`CreationDate >= ${A} AND CreationDate < ${Z}`;
+  const wEdit=`EditDate >= ${A} AND EditDate < ${Z} AND CreationDate < ${A}`;
+  const wLog=`CreationDate >= ${A} AND CreationDate < ${Z}`;
+  Promise.all([
+    treeLayer.queryFeatureCount({where:wAdd}).catch(()=>null),
+    treeLayer.queryFeatureCount({where:wEdit}).catch(()=>null),
+    inspLayer.queryFeatureCount({where:wLog}).catch(()=>null)
+  ]).then(([added,edited,logged])=>{
+    const box=document.getElementById('dashLive'); if(!box)return;
+    if(added==null&&edited==null&&logged==null){ box.innerHTML='<div class="empty">Live totals need editor tracking enabled on the service — using session counts above.</div>'; return; }
+    const bar=(lab,v,mx,c)=>`<div class="bar"><div class="lab">${lab}</div><div class="track"><div class="fill" style="width:${mx?Math.max(4,v/mx*100):4}%;background:${c}"></div></div><div class="vv">${v}</div></div>`;
+    const mx=Math.max(added||0,edited||0,logged||0,1);
+    box.innerHTML=bar('Added',added||0,mx,cssv('--good'))+bar('Edited',edited||0,mx,cssv('--pot'))+bar('Logged',logged||0,mx,cssv('--amber'));
+  });
+  // Trees by collector: who added or edited trees in this window (tree layer, grouped by INSPECTR)
+  const wTouched="(CreationDate >= "+A+" AND CreationDate < "+Z+") OR (EditDate >= "+A+" AND EditDate < "+Z+")";
+  treeLayer.queryFeatures({where:wTouched, outFields:["INSPECTR"], returnGeometry:false}).then(res=>{
+    const byC={};
+    res.features.forEach(f=>{ const who=(f.attributes.INSPECTR||'(unnamed)'); byC[who]=(byC[who]||0)+1; });
+    const el=document.getElementById('dashCollector'); if(!el)return;
+    const ent=Object.entries(byC).sort((x,y)=>y[1]-x[1]);
+    if(!ent.length){ el.innerHTML='<div class="empty">No trees collected in this period.</div>'; return; }
+    const mx=Math.max(...ent.map(e=>e[1]));
+    el.innerHTML=ent.map(([k,v])=>'<div class="bar"><div class="lab">'+esc(k)+'</div><div class="track"><div class="fill" style="width:'+Math.max(4,v/mx*100)+'%;background:'+cssv('--brand')+'"></div></div><div class="vv">'+v+'</div></div>').join('');
+  }).catch(()=>{ const el=document.getElementById('dashCollector'); if(el) el.innerHTML='<div class="empty">Collector totals need editor tracking enabled on the service.</div>'; });
+  inspLayer.queryFeatures({where:wLog, outFields:["inspector_name","activity_type"], returnGeometry:false}).then(res=>{
+    const byI={}, byA={};
+    res.features.forEach(f=>{const a=f.attributes;const ins=a.inspector_name||'(none)';const act=a.activity_type||'(none)';byI[ins]=(byI[ins]||0)+1;byA[act]=(byA[act]||0)+1;});
+    const render=(obj,cid,c)=>{const el=document.getElementById(cid);if(!el)return;const ent=Object.entries(obj).sort((x,y)=>y[1]-x[1]);if(!ent.length){el.innerHTML='<div class="empty">No logs in this period.</div>';return;}const mx=Math.max(...ent.map(e=>e[1]));el.innerHTML=ent.map(([k,v])=>`<div class="bar"><div class="lab">${esc(k)}</div><div class="track"><div class="fill" style="width:${Math.max(4,v/mx*100)}%;background:${c}"></div></div><div class="vv">${v}</div></div>`).join('');};
+    render(byI,'dashInsp',cssv('--brand')); render(byA,'dashAct',cssv('--sat'));
+  }).catch(()=>{
+    ['dashInsp','dashAct'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML='<div class="empty">Could not load.</div>';});
+  });
+}
+function openRecords(){
+  if(addMode)toggleAdd(); selectedGraphic=null;
+  setHead('SESSION · SYNC & EXPORT','This session','Live edits and the deliverable path',cssv('--brand'));
+  Buffer.count().then(q=>{
+    document.getElementById('shBody').innerHTML=`
+      <div class="attrs" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="attr"><div class="k">Logged</div><div class="v">${dayLogged}</div></div>
+        <div class="attr"><div class="k">Buffered</div><div class="v" style="color:${q?cssv('--amber'):''}">${q}</div></div>
+        <div class="attr"><div class="k">Network</div><div class="v">${navigator.onLine?'online':'offline'}</div></div>
+      </div>
+      <div class="note">Offline edits are held safely on this device and flush automatically when you reconnect.</div>
+      ${q?`<div class="actions"><button class="btn primary" onclick="flushQueue();closeSheet()">Sync ${q} now</button></div>`:''}
+      <div class="slabel">Photo quality</div>
+      <div class="note" style="margin-bottom:8px">Lower quality uploads faster on weak signal. Higher keeps more detail for defects.</div>
+      <div class="hlpicks" id="photoPresetPicks">
+        <button class="hlp${PHOTO_PRESET==='fast'?' on':''}" onclick="pickPhotoPreset('fast')">Fast</button>
+        <button class="hlp${PHOTO_PRESET==='balanced'?' on':''}" onclick="pickPhotoPreset('balanced')">Balanced</button>
+        <button class="hlp${PHOTO_PRESET==='detail'?' on':''}" onclick="pickPhotoPreset('detail')">High detail</button>
+      </div>
+      <div class="hint" id="photoPresetHint" style="margin-bottom:6px">${esc(PHOTO_PRESETS[PHOTO_PRESET].label)}</div>
+      <div class="slabel">Management</div>
+      <div class="actions"><button class="btn brand" style="width:100%" onclick="location.href='/'">Open management dashboard</button></div>
+      <div style="text-align:center;font-size:11px;color:var(--muted);margin-top:16px;padding-top:12px;border-top:1px solid var(--line);line-height:1.5">&copy; 2026 Silv-Econ Ltd. All rights reserved.<br>Proprietary and confidential — not for redistribution or reuse without written permission.</div>
+      <div class="actions"><button class="btn ghost" style="width:100%" onclick="closeSheet()">Done</button></div>`;
+    openSheet();
+  });
+}
+</script>
+</body>
+</html>
