@@ -637,7 +637,10 @@ require([
       if(addMode){ placeProvisional(e.mapPoint); return; }
       view.hitTest(e).then(res=>{
         const hit=res.results.find(r=>r.graphic && r.graphic.layer===treeLayer);
-        if(hit) openTree(hit.graphic);
+        if(hit){ openTree(hit.graphic); return; }
+        // also allow opening an offline-created tree's local marker (not yet on the layer)
+        const localHit=res.results.find(r=>r.graphic && r.graphic.attributes && r.graphic.attributes.__local);
+        if(localHit) openTree(localHit.graphic);
       });
     });
 
@@ -1982,7 +1985,7 @@ async function syncJob(job){
       bumpDay('log');
       return true;
     }
-  }catch(e){ return false; }
+  }catch(e){ window._lastSyncError=(e&&(e.message||e.name))||String(e); return false; }
   return false;
 }
 // rewrite queued logs whose foreign key pointed at an offline tree's LOCAL GlobalID so they now
@@ -2023,7 +2026,8 @@ function flushQueue(){
       let job=q; try{ const cur=(await Buffer.all()).find(x=>x.id===q.id); if(cur) job=cur; else continue; }catch(e){}
       const ok=await syncJob(job);
       if(ok){ await Buffer.remove(job.id); synced++; try{ const gg=job.payload&&job.payload.attributes&&job.payload.attributes.GlobalID; if(gg) clearPendingEdit(gg); }catch(e){} }
-      else { job.tries=(job.tries||0)+1; try{ await Buffer.put(job); }catch(e){} }
+      else { job.tries=(job.tries||0)+1; try{ await Buffer.put(job); }catch(e){}
+             if(window._lastSyncError && typeof toast==='function') toast('Sync failed ('+job.kind+'): '+window._lastSyncError,'err'); }
       const left=await Buffer.count(); updateQueueBadge(left);
     }
     _flushing=false;
