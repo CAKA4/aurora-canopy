@@ -1969,7 +1969,7 @@ function flushQueue(force){
     }
     _flushing=false;
     const left=await Buffer.count();
-    if(left===0){ toast('All work synced to the server','ok'); if(selectedGraphic&&selectedGraphic.attributes) { try{ openTree(selectedGraphic); }catch(e){} } }
+    if(left===0){ toast('All work synced to the server','ok'); }   // do NOT navigate the UI — the user may be mid-form
     else { toast(synced+' synced, '+left+' still pending — will keep retrying','warn'); }
   }).catch(()=>{ _flushing=false; });
 }
