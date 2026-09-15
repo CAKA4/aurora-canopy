@@ -1216,6 +1216,7 @@ function openTree(g){
       <button class="bigact log" onclick="openInspection()"><svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4M4 6h16M4 18h16M4 12h3" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>New log</button>
     </div>
     <div class="slabel">Activity log</div>
+    <div class="hint" style="margin:-2px 0 8px">Photos taken during an inspection are shown inside each inspection record below \u2014 tap a record to view them.</div>
     <div id="histBox"><div class="empty">Loading inspections…</div></div>`;
   openSheet();
   loadHistory(gid);
@@ -1544,8 +1545,12 @@ function sameAsPrev(field){
     el.value=v; markChanged(el); autoOnSpecies(id);
   } else if(field==='DBH'){
     el.value=v; markChanged(el); Object.assign(derived, dbhDerived(v)); renderAuto();
-  } else {                                                // plain selects
-    el.value=v; markChanged(el);
+  } else {                                                // plain selects — tolerate case/legacy mismatch
+    let opt=Array.from(el.options).find(o=>o.value===String(v));
+    if(!opt) opt=Array.from(el.options).find(o=>o.value.toLowerCase()===String(v).toLowerCase());
+    if(opt){ el.value=opt.value; }
+    else { const o=document.createElement('option'); o.value=String(v); o.textContent=String(v); el.appendChild(o); el.value=String(v); }
+    markChanged(el);
   }
   toast('Set to previous tree\u2019s value','ok');
 }
@@ -1553,7 +1558,14 @@ function sameAsPrev(field){
 function fillFromLastTree(){
   if(!lastTreeAttrs){ toast('No previous tree yet','warn'); return; }
   const L=lastTreeAttrs;
-  const setSel=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null){ el.value=v; markChanged(el); } };
+  const setSel=(id,v)=>{ const el=document.getElementById(id); if(!el||v==null||v==='')return;
+    // try exact, then case-insensitive match against the existing options
+    let opt=Array.from(el.options).find(o=>o.value===String(v));
+    if(!opt) opt=Array.from(el.options).find(o=>o.value.toLowerCase()===String(v).toLowerCase());
+    if(opt){ el.value=opt.value; }
+    else { const o=document.createElement('option'); o.value=String(v); o.textContent=String(v); el.appendChild(o); el.value=String(v); }  // keep an unmatched legacy value
+    markChanged(el);
+  };
   const setPick=(id,v)=>{ const el=document.getElementById(id); if(el&&v!=null){ el.value=domLabelFor(id,v); el.setAttribute('data-val',v); markChanged(el); } };
   // species + DBH (pickfields that store their display value directly)
   const cs=document.getElementById('n_COMMON'); if(cs&&L.COMMON){ cs.value=L.COMMON; markChanged(cs); }
